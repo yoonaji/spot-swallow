@@ -1,0 +1,44 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: settlement-worker
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/swallow}
+    username: ${DB_USER:swallow}
+    password: ${DB_PASSWORD:swallow}
+    hikari:
+      maximum-pool-size: 3
+  rabbitmq:
+    host: ${RABBIT_HOST:localhost}
+    port: 5672
+    username: ${RABBIT_USER:swallow}
+    password: ${RABBIT_PASSWORD:swallow}
+    listener:
+      simple:
+        # 한 워커는 한 번에 한 작업만 가져간다. 회수 시 재처리되는 작업이 최대 1건이 된다.
+        prefetch: 1
+        concurrency: 1
+        max-concurrency: 1
+        default-requeue-rejected: false
+
+swallow:
+  worker:
+    id: ${WORKER_ID:${HOSTNAME:worker-local}}
+    # 거래 1건당 추가 처리 시간(마이크로초). 처리율 μ 를 실험에 맞게 조절한다.
+    work-micros-per-tx: ${WORK_MICROS_PER_TX:0}
+  chaos:
+    # NONE | BEFORE_COMMIT | AFTER_COMMIT_BEFORE_ACK
+    crash-point: ${CHAOS_CRASH_POINT:NONE}
+    crash-probability: ${CHAOS_CRASH_PROBABILITY:0}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      worker: ${swallow.worker.id}
