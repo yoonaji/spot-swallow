@@ -1,0 +1,33 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: settlement-api
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/swallow}
+    username: ${DB_USER:swallow}
+    password: ${DB_PASSWORD:swallow}
+  rabbitmq:
+    host: ${RABBIT_HOST:localhost}
+    port: 5672
+    username: ${RABBIT_USER:swallow}
+    password: ${RABBIT_PASSWORD:swallow}
+    publisher-confirm-type: correlated
+
+swallow:
+  outbox:
+    poll-ms: 200
+    batch-size: 50
+  chaos:
+    # 0 보다 크면 그 확률로 "브로커 수신 후, PUBLISHED 표시 전" 에 프로세스를 강제 종료한다.
+    publisher-crash-after-send-probability: ${CHAOS_PUBLISHER_CRASH_PROBABILITY:0}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}

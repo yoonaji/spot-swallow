@@ -1,0 +1,72 @@
+# 로컬 실험 환경.
+#   안정 영역: postgres, rabbitmq, settlement-api(접수 + 아웃박스 발행), prometheus, grafana
+#   스팟 영역: settlement-worker (여러 개로 늘리고, 강제 종료해도 데이터가 틀리지 않아야 한다)
+#
+# 실행: mvn -q package -DskipTests && docker compose up -d --build --scale settlement-worker=3
+name: spot-swallow
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: swallow
+      POSTGRES_USER: swallow
+      POSTGRES_PASSWORD: swallow
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U swallow -d swallow"]
+      interval: 3s
+      retries: 20
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: swallow
+      RABBITMQ_DEFAULT_PASS: swallow
+    ports: ["5672:5672", "15672:15672", "15692:15692"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 5s
+      retries: 30
+
+  settlement-api:
+    build: ./settlement-api
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/swallow
+      RABBIT_HOST: rabbitmq
+      CHAOS_PUBLISHER_CRASH_PROBABILITY: ${CHAOS_PUBLISHER_CRASH_PROBABILITY:-0}
+    ports: ["8080:8080"]
+    restart: unless-stopped
+    depends_on:
+      postgres: {condition: service_healthy}
+      rabbitmq: {condition: service_healthy}
+
+  settlement-worker:
+    build: ./settlement-worker
+    environment:
+      DB_URL: jdbc:postgresql://postgres:5432/swallow
+      RABBIT_HOST: rabbitmq
+      WORK_MICROS_PER_TX: ${WORK_MICROS_PER_TX:-1000}
+      CHAOS_CRASH_POINT: ${CHAOS_CRASH_POINT:-NONE}
+      CHAOS_CRASH_PROBABILITY: ${CHAOS_CRASH_PROBABILITY:-0}
+    # 스팟 워커는 스스로 되살아나지 않는다. 회수된 워커의 교체는 실험 하네스(scripts/e2e.py)가
+    # 복구 시간(--recovery)만큼 기다린 뒤 수행한다. 3주차에는 Python 제어기가 이 역할을 맡는다.
+    restart: "no"
+    depends_on:
+      settlement-api: {condition: service_started}
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports: ["3000:3000"]
+    depends_on: [prometheus]
