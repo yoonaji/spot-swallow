@@ -79,6 +79,21 @@ EC2 에서 측정한 복구 시간 분포를 주입합니다.
 | 4초마다 회수 + 커밋 후 Ack 전 20% 종료 | 27회 회수, 48회 교체 | 24 | 0 | 0 | 0 |
 | 4초마다 회수 + 발행기 2% 종료 | 회수 다수, 발행기 1회 | 4 | 0 | 0 | 0 |
 
+### 2주차 결과 요약
+
+복구가 오래 걸리고 회수가 몰리는 상황(복구 지연 ×4)에서 제안 기법은 고정 여유 4대보다 싸면서(온디맨드 대비 0.71 vs 0.86)
+완료시간 목표 위반율이 절반 이하입니다(1.8% vs 4.0%). AWS Capacity Rebalancing 은 이 상황에서 위반율 7.5%,
+복구가 빠른 상황에서는 AWS 쪽이 더 낫습니다. 평상시에는 고정 여유 2대보다 30% 쌉니다.
+
+![파레토](docs/figures/pareto.png)
+
+```bash
+pip install matplotlib pytest
+python3 -m pytest -q tests            # 제어 알고리즘 단위 테스트 (중간보고서 예시 재현 포함)
+python3 -m sim.run_experiments        # 정책 비교 795회 (4코어 약 5분)
+python3 -m sim.plots
+```
+
 ## API
 
 | 메서드 | 경로 | 설명 |
@@ -101,6 +116,6 @@ EC2 에서 측정한 복구 시간 분포를 주입합니다.
 - [x] 1주차: 정산 백엔드 뼈대 (Outbox, 수동 Ack, 멱등성, 대사, 장애 주입 훅)
 - [x] 1주차: 처리 시간 측정, 공개 회수 기록 변환 ([측정 결과](docs/measurements.md))
 - [ ] 1주차: EC2 Spot 복구 시간 측정 (`tools/measure/ec2_tready.py`, AWS 계정 필요)
-- [ ] 2주차: 시뮬레이터와 정책 비교 (고정 여유분, 회수율 기반, 큐 반응형, 제안 기법, 오라클)
+- [x] 2주차: 제어기와 시뮬레이터, 정책 비교 ([결과](docs/week2-simulation.md), [설계 결정](docs/decisions.md), [실패·수정 기록](docs/failure-log.md))
 - [ ] 3주차: Python 제어기 연동, 회수 주입기, Grafana 대시보드·알림, DLQ 재처리
 - [ ] 4주차: 실험, GameDay, 최종 보고서
