@@ -106,3 +106,14 @@ def test_wait_based_check_is_less_conservative_but_still_safe():
     assert nw < n8
     # 모두 회수되고 복구가 SLO 보다 길면 스팟만으로는 어떤 n 도 안 된다
     assert max_wait(8, 0, 8, LAM, MU, 0, 400) > 300
+
+
+def test_fleet_plan_changes_matches_simulator_rules():
+    from controller.fleet import Worker, plan_changes
+    ws = [Worker("a", "spot", 1, state="ready"), Worker("b", "spot", 2, state="ready"),
+          Worker("c", "spot", 3, state="booting"), Worker("d", "od", 4, state="ready")]
+    # 줄일 때는 부팅 중인 워커부터
+    assert plan_changes(ws, 2, 1) == (0, 0, ["c"])
+    # 회수 경고를 받은 워커는 없는 셈 치고 대체를 요청한다
+    assert plan_changes(ws, 3, 1, doomed={"a"}) == (1, 0, [])
+    assert plan_changes(ws, 3, 3) == (0, 2, [])
