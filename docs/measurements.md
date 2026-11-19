@@ -21,7 +21,9 @@
 
 ## 2. 복구 시간 Tready (EC2 Spot)
 
-`tools/measure/ec2_tready.py` 로 측정한다. AWS 계정이 필요해 아직 실행하지 않았다.
+**2026-11-19 측정 완료: 미리 구운 이미지 기준 약 15초, 기본 AMI 38초. 결과와 해석은 [tready-ec2.md](tready-ec2.md).**
+
+`tools/measure/ec2_tready.py` 로 측정한다.
 
 ```bash
 pip install boto3 && aws configure
