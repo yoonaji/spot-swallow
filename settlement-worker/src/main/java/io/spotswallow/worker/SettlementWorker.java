@@ -95,6 +95,7 @@ public class SettlementWorker {
     }
 
     private void process(String jobId) {
+        long startedNanos = System.nanoTime();
         Job job = loadJob(jobId);
 
         // 1) 계산: 트랜잭션 밖. 여기서 회수되면 Ack 가 없으므로 메시지는 재전달된다.
@@ -112,7 +113,9 @@ public class SettlementWorker {
                     s.txCount(), s.gross(), s.fee(), s.net(), workerId);
             if (inserted == 1) {
                 jdbc.update("UPDATE settlement_jobs SET status = 'COMPLETED', completed_at = now() WHERE job_id = ?", job.jobId());
-                insertEvent(job.jobId(), "COMPLETED", "net=" + s.net());
+                long processingMs = (System.nanoTime() - startedNanos) / 1_000_000;
+                insertEvent(job.jobId(), "COMPLETED",
+                        "net=" + s.net() + ";tx=" + s.txCount() + ";processing_ms=" + processingMs);
                 return true;
             }
             insertEvent(job.jobId(), "DUPLICATE_SKIPPED", "already settled");
