@@ -14,7 +14,7 @@ import time
 from dataclasses import replace
 from multiprocessing import Pool
 
-from capacity.policies import (AwsCapacityRebalance, Config, FixedSpare, Proposed, ProposedWithNotice,
+from capacity.policies import (AwsCapacityRebalance, Config, FixedSpare, OnDemandOnly, Proposed, ProposedWithNotice,
                                QueueReactive, ablation_policies, standard_policies)
 from sim.engine import Scenario, run
 
@@ -59,6 +59,13 @@ def experiments(seeds):
     # 식 (7)은 평균 처리율만 본다. 처리 시간 편차가 커지면 얼마나 틀리는가
     out["cv"] = [(replace(SCENARIOS["concentrated"], cv=cv), pol, base, s, {})
                  for cv in (0.57, 1.0, 2.0) for pol in (Proposed(), FixedSpare(2)) for s in S]
+    # 핵심 질문: 복구 시간이 얼마를 넘으면 회수 경고 후 교체(AWS)만으로는 부족한가
+    out["tready_sweep"] = [(replace(SCENARIOS["concentrated"], name=f"tready-x{m:g}", tready_mult=m), pol, base, s,
+                            {"tready_mult": m})
+                           for m in (0.5, 1, 1.5, 2, 3, 4, 6)
+                           for pol in (AwsCapacityRebalance(), FixedSpare(2), Proposed(), ProposedWithNotice(),
+                                       OnDemandOnly())
+                           for s in S]
     return out
 
 

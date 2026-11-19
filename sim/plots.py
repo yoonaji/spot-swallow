@@ -157,6 +157,38 @@ def ablation(rows):
     plt.close(fig)
 
 
+# ---------------------------------------------------------------- 그래프 3: 복구 시간에 따른 경계선
+def crossover(rows):
+    a = agg(rows, ("tready_mult", "policy"))
+    mults = sorted({k[0] for k in a})
+    lines = [("aws-rebalance", "AWS 재조정 (여유 0 + 경고 시 교체)", ORANGE),
+             ("fixed-2", "고정 여유 +2", GRAY),
+             ("proposed+rebalance", "제안 기법 + AWS 재조정", BLUE)]
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    xs = [150 * m / 60 for m in mults]   # Tready 중앙값(분)
+    for pol, label, color in lines:
+        v = [a[(m, pol)]["violation_rate"] * 100 for m in mults]
+        c = [a[(m, pol)]["cost_per_1k_jobs"] / a[(m, "on-demand-only")]["cost_per_1k_jobs"] for m in mults]
+        for ax, ys in ((axes[0], v), (axes[1], c)):
+            ax.plot(xs, ys, color=color, linewidth=2, marker="o", markersize=6, markeredgecolor=SURFACE,
+                    markeredgewidth=1.5, label=label)
+            ax.annotate(label, (xs[-1], ys[-1]), xytext=(6, 0), textcoords="offset points", fontsize=8,
+                        color=INK2, va="center")
+    for ax in axes:
+        ax.axvline(2, color=INK2, linewidth=0.8, linestyle="--")
+        ax.set_xlabel("복구 시간 Tready 중앙값 (분)")
+        ax.set_xlim(0, max(xs) * 1.6)
+    axes[0].text(2.1, axes[0].get_ylim()[1] * 0.92, "회수 경고 2분", fontsize=8, color=INK2)
+    axes[0].set_ylabel("완료시간 목표(5분) 위반율 (%)")
+    axes[1].set_ylabel("비용 (온디맨드 전용 = 1)")
+    axes[1].set_ylim(0, 1.05)
+    fig.suptitle("복구 시간이 길어질수록 '경고 후 교체'만으로는 부족해진다 (회수 집중 trace, 5구간 평균)", x=0.01,
+                 ha="left", color=INK, fontsize=11)
+    fig.tight_layout()
+    fig.savefig(os.path.join(FIG, "crossover.png"), dpi=160)
+    plt.close(fig)
+
+
 # ---------------------------------------------------------------- 표
 def table(a, rows_keys, cols, title, fmt):
     lines = [f"### {title}", "", "| " + " | ".join(["", *cols]) + " |", "|" + "---|" * (len(cols) + 1)]
@@ -199,7 +231,8 @@ def main():
     if abl:
         a = agg(abl, ("scenario", "policy"))
         out.append(table(a, list(dict.fromkeys(r["policy"] for r in abl)), SCEN_ORDER, "Ablation", cell))
-    for name, key, title in [("notice", "notice_s", "회수 경고가 오는 시점 (초 전)"),
+    for name, key, title in [("tready_sweep", "tready_mult", "복구 시간 배수 (중앙값 150초 × 배수)"),
+                             ("notice", "notice_s", "회수 경고가 오는 시점 (초 전)"),
                              ("slo", "slo", "완료시간 목표 (초)"), ("cv", "cv", "처리 시간 변동계수 CV")]:
         rows = load(name)
         if not rows:
@@ -207,7 +240,7 @@ def main():
         a = agg(rows, ("scenario", key, "policy"))
         cols = list(dict.fromkeys((r["scenario"], r[key]) for r in rows))
         pols = list(dict.fromkeys(r["policy"] for r in rows))
-        lines = [f"### {title}", "", "| 정책 | " + " | ".join(f"{SCEN_KO[s]} / {k:g}" for s, k in cols) + " |",
+        lines = [f"### {title}", "", "| 정책 | " + " | ".join(f"{SCEN_KO.get(s, '회수 집중')} / {k:g}" for s, k in cols) + " |",
                  "|" + "---|" * (len(cols) + 1)]
         for p in pols:
             lines.append(f"| {p} | " + " | ".join(cell(a.get((s, k, p))) for s, k in cols) + " |")
@@ -218,6 +251,9 @@ def main():
         pareto(main_rows, sweep)
     if abl:
         ablation(abl)
+    sweep_rows = load("tready_sweep")
+    if sweep_rows:
+        crossover(sweep_rows)
     print("wrote", TABLES, "and", FIG)
 
 
