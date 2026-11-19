@@ -47,6 +47,8 @@ jobs:
           CHAOS_CRASH_PROBABILITY: "0.3"
         run: docker compose up -d --build --scale settlement-worker=3 postgres rabbitmq settlement-api settlement-worker
       - name: 작업 100건 처리 후 유실·중복·금액 불일치 0 확인
-        run: python3 scripts/e2e.py --merchants 50 --days 2 --resubmit --timeout 400 | tee e2e.log && grep -q "RESULT: PASS" e2e.log
+        run: |
+          python3 scripts/e2e.py --merchants 50 --days 2 --resubmit --timeout 400 | tee e2e.log
+          grep -q "RESULT: PASS" e2e.log
       - if: failure()
         run: docker compose logs --tail 200
