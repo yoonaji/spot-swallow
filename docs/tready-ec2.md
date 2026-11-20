@@ -62,22 +62,54 @@ JVM 시작부터 Spring 의 "Started" 로그(RabbitMQ 연결 포함)까지 **p50
 - 즉 제안 기법은 복구가 빠를 때 손해가 없고(2주차의 3.75분 구간에서 보였던 과잉 비용 0.48 vs 0.37 은 이 영역에서는 생기지 않는다),
   복구가 5분을 넘을 때 이득이 난다. "언제나 켜 둬도 되는 기법"이라는 주장을 할 수 있는 근거다.
 
-## 다음 측정 (보안 부트스트랩)
+## 보안 부트스트랩 오버헤드 (2026-11-20)
 
-`ec2_tready.py` 에 JDK 설치 후·앱 기동 전에 임의의 셸 단계를 끼우는 옵션을 넣었다.
-`bootstrap_start` / `bootstrap_done` 마크로 그 구간(`bootstrap_s`)을 따로 재고, `tready_baked_s` 에 포함한다.
+원자료: [`docs/data/tready-security-2026-11-20.csv`](data/tready-security-2026-11-20.csv).
+도구: `tools/measure/security_overhead.py`, 스크립트 `infra/bootstrap/vault-host.sh`, `infra/bootstrap/dyn-secret.sh`.
+
+### 구성
+
+- **안정 영역 역할 호스트** (측정하는 동안만, t4g.small 온디맨드, 워커와 같은 서브넷 ap-northeast-2d)
+  - Postgres 15: 워커용 그룹 롤 `swallow_worker` 는 결과 테이블 `SELECT, INSERT` 만. `public` 스키마 기본 권한 회수
+  - Vault (TLS, 사설 IP 인증서): database 엔진이 요청마다 `swallow_worker` 에 속한 1시간짜리 DB 계정을 만든다.
+    워커 정책은 `database/creds/worker` 읽기만, AppRole secret_id 는 1회용, 전달은 응답 래핑(1회만 풀림)
+  - 시작 때 자체 점검: 발급 계정으로 INSERT 는 되고 CREATE TABLE 은 거부되는지 확인 → 통과
+- **스팟 워커 부트스트랩** (JDK 설치 후·앱 기동 전): 래핑 해제 → AppRole 로그인 → DB 계정 발급 → `/run/swallow/worker.env` (0600).
+  이미지에는 비밀이 없고, 인바운드 포트를 열지 않는다(기본 보안 그룹: 같은 그룹끼리만 접근).
+- baseline 과 dyn-secret 을 **번갈아** 20회씩 띄웠다(시간대 차이가 한쪽에 몰리지 않게). 40회 모두 성공, dyn-secret 20회 모두 자격 증명 수신 확인.
+
+### 결과 (초)
+
+| 구간 | baseline p50 / p95 | dyn-secret p50 / p95 |
+| --- | --- | --- |
+| provision_s | 4.4 / 4.5 | 4.4 / 4.5 |
+| boot_s | 9.6 / 10.5 | 9.7 / 10.5 |
+| bootstrap_s | - | **0.092 / 0.100** (최대 0.101) |
+| app_start_s | 0.8 / 0.9 | 0.8 / 0.8 |
+| tready_baked_s | 10.4 / 11.3 | 10.6 / 11.4 |
+
+- 보안 부트스트랩 자체는 **약 90ms** (TLS 연결 3번 + Vault 처리 + DB 계정 생성)다. Tready 대비 약 1%로, 실행 간 흔들림(약 1초)보다 작다.
+- 그래서 **이 구성의 보안 비용은 경계선(약 4분) 기준으로 사실상 0** 이다. "보안을 강하게 해도 복구 속도 손해가 없다"는 근거로 쓸 수 있다.
+- 다만 이 숫자는 하한이다. 들어가지 않은 것: Vault 를 다른 영역·리전에 둘 때의 왕복, Vault 가 몰릴 때(동시 회수로 워커 여러 대가 한꺼번에 요청)의 대기,
+  IAM 기반 인증(STS 서명 확인), 이미지 서명 확인, mTLS 인증서 발급, JVM 안에서 DB 에 TLS 로 붙는 시간.
+  동시 요청 부하는 4주차 GameDay 에서 함께 볼 수 있다.
+
+### 측정 방식의 한계
+
+- 측정 계정이 보안 그룹을 만들 수 없어 Vault 포트에 밖에서 접근할 수 없다. 그래서 래핑된 secret_id 를 Vault 호스트가 미리 25개 만들어 콘솔 출력으로 넘겼다.
+  운영에서는 제어기(안정 영역)가 워커를 띄우기 직전에 하나씩 발급한다(수십 ms, Tready 바깥).
+- 콘솔 출력은 긴 줄을 잘라서, CA 인증서는 64자씩 나눠 보내고 SHA-256 으로 확인한다.
+- 부트스트랩의 JSON 파싱은 python3 을 3번 띄운다(각 수십 ms 이하). 실제 워커는 Java 안에서 하므로 이 몫만큼 더 짧아진다.
+
+### 재현
 
 ```bash
-python3 tools/measure/ec2_tready.py --runs 20 --variant baseline   --out data/tready-sec.csv
-python3 tools/measure/ec2_tready.py --runs 20 --variant dyn-secret --bootstrap-script infra/bootstrap/dyn-secret.sh --out data/tready-sec.csv
-python3 tools/measure/summarize_tready.py data/tready-sec.csv     # 조건별 표 + baseline 대비 p50/p95 증가분
+python3 tools/measure/security_overhead.py --runs 20 --subnet <기본 VPC 서브넷 ID>
+python3 tools/measure/summarize_tready.py data/tready-security.csv
 ```
 
-부트스트랩 스크립트 후보: Vault 에 인스턴스 신원(AWS IAM auth)으로 로그인 → 수명 짧은 DB 자격 증명 발급 → 워커 환경 변수로 전달.
-Vault 서버가 필요하므로 안정 영역 쪽 배치를 먼저 정해야 한다.
-
-안전장치도 추가했다: 인스턴스 안에서 `shutdown -h +30` 을 걸고 `InstanceInitiatedShutdownBehavior=terminate` 로 띄워,
-측정 스크립트(로컬)가 중간에 죽어도 30분 뒤 스스로 종료된다. 결과 파일에 `variant`, `bootstrap_s` 열이 추가됐다.
+`ec2_tready.py` 에는 이 측정을 위해 `--variant`, `--bootstrap-script` 와 자체 종료 안전장치(`shutdown -h +30`,
+`InstanceInitiatedShutdownBehavior=terminate`)를 넣었다. Vault 호스트도 180분 뒤 스스로 종료되고, 드라이버는 예외가 나도 지운다.
 
 ## 측정 계정 권한 메모
 

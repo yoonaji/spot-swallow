@@ -32,8 +32,8 @@ def main(paths):
         for c in COLS:
             xs = col(vr, c)
             if xs:
-                print(f"  {c:18s} n={len(xs):3d} mean={statistics.fmean(xs):6.1f}s p50={quantile(xs, .5):6.1f} "
-                      f"p90={quantile(xs, .9):6.1f} p95={quantile(xs, .95):6.1f} max={max(xs):6.1f}")
+                print(f"  {c:18s} n={len(xs):3d} mean={statistics.fmean(xs):6.2f}s p50={quantile(xs, .5):6.2f} "
+                      f"p90={quantile(xs, .9):6.2f} p95={quantile(xs, .95):6.2f} max={max(xs):6.2f}")
         for r in failed:
             print("  failed:", r["run"], r["error"])
     if len(variants) > 1:

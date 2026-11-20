@@ -149,7 +149,7 @@ def derive(row):
     if row.get("t_jdk_installed") and row.get("t_boot"):
         d["install_s"] = round((row["t_jdk_installed"] - row["t_boot"]) / 1000, 1)
     if row.get("t_bootstrap_done") and row.get("t_bootstrap_start"):
-        d["bootstrap_s"] = round((row["t_bootstrap_done"] - row["t_bootstrap_start"]) / 1000, 1)
+        d["bootstrap_s"] = round((row["t_bootstrap_done"] - row["t_bootstrap_start"]) / 1000, 3)  # 짧아서 ms 까지
     app_from = row.get("t_bootstrap_done") or row.get("t_jdk_installed")
     if row.get("t_ready") and app_from:
         d["app_start_s"] = round((row["t_ready"] - app_from) / 1000, 1)
