@@ -20,9 +20,11 @@ TABLES = "docs/results-week2-tables.md"
 
 INK, INK2, GRID, SURFACE = "#0b0b0b", "#52514e", "#e4e3df", "#fcfcfb"
 BLUE, ORANGE, AQUA, GRAY = "#2a78d6", "#eb6834", "#1baf7a", "#9a9993"
-SCEN_ORDER = ["normal", "concentrated", "surge", "delay-x2", "delay-x4"]
+SCEN_ORDER = ["normal", "concentrated", "surge", "delay-x2", "delay-x4", "measured"]
+MEASURED_BAKED_MIN = 14.6 / 60     # EC2 실측: 미리 구운 이미지 + 실제 워커 기동 (docs/tready-ec2.md)
+MEASURED_COLD_MIN = 38.3 / 60      # EC2 실측: 기본 AMI 에서 JDK 설치부터
 SCEN_KO = {"normal": "평상시", "concentrated": "회수 집중", "surge": "부하 급증",
-           "delay-x2": "복구 지연 ×2", "delay-x4": "복구 지연 ×4"}
+           "delay-x2": "복구 지연 ×2", "delay-x4": "복구 지연 ×4", "measured": "회수 집중 + 실측 Tready"}
 
 plt.rcParams.update({
     "font.family": ["NanumGothic", "DejaVu Sans"],
@@ -140,7 +142,7 @@ def ablation(rows):
                     continue
                 y = j + (i - 2) * 0.13
                 val = r[metric] * 100 if metric == "violation_rate" else (r[metric] / base[metric] - 1) * 100
-                ax.scatter([val], [y], s=22, color=[BLUE, ORANGE, AQUA, "#eda100", "#6250d6"][i],
+                ax.scatter([val], [y], s=22, color=[BLUE, ORANGE, AQUA, "#eda100", "#6250d6", GRAY][i],
                            label=SCEN_KO[sc] if j == 0 else None, zorder=3)
         ax.set_yticks(range(len(variants)))
         ax.set_yticklabels(["전체(제안)", "식(8) 원형으로", "Tready 꼬리 제거", "동시 회수 제거", "재처리 제거", "온디맨드 제거",
@@ -178,7 +180,9 @@ def crossover(rows):
         ax.axvline(2, color=INK2, linewidth=0.8, linestyle="--")
         ax.set_xlabel("복구 시간 Tready 중앙값 (분)")
         ax.set_xlim(0, max(xs) * 1.6)
+        ax.axvspan(MEASURED_BAKED_MIN, MEASURED_COLD_MIN, color=AQUA, alpha=0.18, linewidth=0)
     axes[0].text(2.1, axes[0].get_ylim()[1] * 0.92, "회수 경고 2분", fontsize=8, color=INK2)
+    axes[0].text(MEASURED_COLD_MIN + 0.1, axes[0].get_ylim()[1] * 0.80, "EC2 실측\n(15~38초)", fontsize=8, color=AQUA)
     axes[0].set_ylabel("완료시간 목표(5분) 위반율 (%)")
     axes[1].set_ylabel("비용 (온디맨드 전용 = 1)")
     axes[1].set_ylim(0, 1.05)
