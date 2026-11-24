@@ -30,5 +30,6 @@ python3 scripts/e2e.py --merchants 200 --days 35 --tx 100 --start 2026-01-01 --k
 | DLQ 격리 | 0 |
 
 - 커밋 후 Ack 전에 죽은 148회는 모두 같은 메시지가 다른 워커에게 다시 전달되는 상황이다. 결과 테이블의 `job_id` PK 가
-  두 번째 반영을 막고 Ack 만 보냈다(`DUPLICATE_SKIPPED` 154건: 148회 + 외부 강제 종료가 같은 순간에 걸린 경우).
+  두 번째 반영을 막고 Ack 만 보냈다(`DUPLICATE_SKIPPED` 154건). 148건을 넘는 6건은 외부 강제 종료가
+  커밋과 Ack 사이에 걸린 경우로 보이지만, 워커별로 확인하지는 않았다.
 - `job_events` 의 `COMPLETED` 는 작업마다 정확히 1번(7,000건)이다.
