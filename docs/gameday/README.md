@@ -50,6 +50,6 @@ docker compose unpause rabbitmq 2>/dev/null; docker compose up -d --scale settle
 
 | 회차 | 날짜 | 주입 | MTTD | MTTR | 대사 | 보고서 |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | | | | | | |
+| 1 | 11/24 | 원장 변조 1건 (대응 Claude) | 10초 | 22초 (선언 217초) | consistent | [report-1](report-1.md) |
 | 2 | | | | | | |
 | 3 | | | | | | |

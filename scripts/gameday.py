@@ -76,11 +76,14 @@ def start():
     open(CURRENT, "w").write(run)
     print(f"GameDay {run} 시작. 지금부터 10분 안에 무언가가 일어난다. 이 창은 닫지 말 것.", flush=True)
     time.sleep(delay)
+    # 주입 시각은 주입 전에 저장하고, 끝난 뒤 다시 저장하지 않는다. 대응자가 그 사이에 detected 를 기록하면
+    # 끝에 다시 저장할 때 덮어써지기 때문이다 (1회차에서 실제로 감지 시각이 사라졌다).
+    rec = json.load(open(path(run)))
     rec["injected_at"] = time.time()
+    save(run, rec)
     for f in faults:
         FAULTS[f]()
         time.sleep(random.uniform(0, 30))
-    save(run, rec)
     print("(주입기 종료)", flush=True)
 
 

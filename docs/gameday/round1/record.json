@@ -1,0 +1,19 @@
+{
+  "run": "20261124-114111",
+  "armed_at": 1795520471.3595529,
+  "faults": [
+    "ledger-tamper"
+  ],
+  "delay_s": 239,
+  "injected_at": 1795520710.6622038,
+  "recovered_at": 1795520927.9120789,
+  "reconciliation": {
+    "consistent": true,
+    "allSettled": false,
+    "statusResultMismatch": 0,
+    "amountMismatch": 0,
+    "doubleCompleted": 0
+  },
+  "detected_at": 1795520720.0,
+  "note": "detected_at 은 주입기 덮어쓰기 버그로 사라져 대응 로그(detected 출력 11:45:20 UTC)에서 복원. 실제 복구(대사 consistent)는 11:45:32 UTC, recovered 는 3분 추가 관찰 뒤 기록"
+}
