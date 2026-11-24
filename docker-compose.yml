@@ -60,6 +60,7 @@ services:
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports: ["9090:9090"]
+    extra_hosts: ["host.docker.internal:host-gateway"]   # 호스트에서 도는 제어기 지표
 
   grafana:
     image: grafana/grafana:11.2.2
@@ -68,5 +69,6 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/etc/grafana/dashboards:ro
     ports: ["3000:3000"]
     depends_on: [prometheus]

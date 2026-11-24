@@ -1,0 +1,138 @@
+# Grafana 알림 규칙 (GameDay 감지 기준). 런북: docs/runbook.md
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: swallow
+    folder: spot-swallow
+    interval: 10s
+    rules:
+      - uid: job-age
+        title: 작업이 완료시간 목표의 절반을 넘게 기다림
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model:
+              expr: 'max(swallow_jobs_oldest_pending_age_seconds)'
+              instant: true
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              refId: C
+              conditions:
+                - evaluator: {type: gt, params: [150]}
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels: {severity: page}
+        annotations:
+          summary: 가장 오래 기다린 작업이 150초(목표 5분의 50%)를 넘었다. 워커 부족·큐 막힘·워커 장애를 의심한다.
+          runbook: docs/runbook.md#job-age
+      - uid: dlq
+        title: DLQ에 메시지가 있음
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model:
+              expr: 'sum(rabbitmq_queue_messages_ready{queue="settlement.jobs.dlq"})'
+              instant: true
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              refId: C
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels: {severity: page}
+        annotations:
+          summary: 재시도해도 실패한 메시지가 격리됐다. job_events 의 DEAD_LETTERED 사유를 보고, 고친 뒤 재처리한다.
+          runbook: docs/runbook.md#dlq
+      - uid: recon-mismatch
+        title: 대사 불일치 발생
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model:
+              expr: 'sum(swallow_recon_amount_mismatch + swallow_recon_status_result_mismatch + swallow_recon_double_completed)'
+              instant: true
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              refId: C
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels: {severity: page}
+        annotations:
+          summary: 입력 거래로 다시 계산한 정산과 확정 결과가 다르다(유실·중복·금액). 새 작업 처리를 멈추고 원인을 찾는다.
+          runbook: docs/runbook.md#recon
+      - uid: outbox-stuck
+        title: 미발행 아웃박스가 1분 넘게 쌓임
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model:
+              expr: 'min_over_time(max(swallow_outbox_pending)[1m:5s])'
+              instant: true
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              refId: C
+              conditions:
+                - evaluator: {type: gt, params: [0]}
+        for: 0s
+        noDataState: OK
+        execErrState: Error
+        labels: {severity: page}
+        annotations:
+          summary: 1분 내내 발행되지 않은 아웃박스가 있다. 발행기(API) 또는 RabbitMQ 연결을 확인한다.
+          runbook: docs/runbook.md#outbox
+      - uid: workers-below-nbase
+        title: 준비된 워커가 Nbase보다 적음
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: {from: 300, to: 0}
+            datasourceUid: prometheus
+            model:
+              expr: 'swallow_controller_ready_workers - swallow_controller_nbase'
+              instant: true
+              refId: A
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              refId: C
+              conditions:
+                - evaluator: {type: lt, params: [0]}
+        for: 30s
+        noDataState: OK
+        execErrState: Error
+        labels: {severity: page}
+        annotations:
+          summary: 큐를 소비하는 워커가 평균 부하를 감당할 최소 수보다 30초 넘게 적다. 회수·스팟 용량 부족·부팅 실패를 확인한다.
+          runbook: docs/runbook.md#workers

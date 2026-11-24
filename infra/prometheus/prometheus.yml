@@ -2,19 +2,22 @@ global:
   scrape_interval: 5s
 
 scrape_configs:
+  # 접수 API: 미완료 작업 나이, 미발행 아웃박스, 대사 결과(유실·중복·금액 불일치, DLQ 격리)
   - job_name: settlement-api
     metrics_path: /actuator/prometheus
     static_configs:
       - targets: ["settlement-api:8080"]
 
-  # 워커는 개수가 바뀌므로 Docker 내장 DNS 로 모든 복제본을 찾는다.
-  - job_name: settlement-worker
-    metrics_path: /actuator/prometheus
-    dns_sd_configs:
-      - names: ["settlement-worker"]
-        type: A
-        port: 8081
+  # 워커는 HTTP 서버를 띄우지 않는다(기동 시간 = 복구 시간이라 웹 서버를 넣지 않음).
+  # 워커 수와 상태는 RabbitMQ 소비자 수와 제어기 지표로 본다.
 
+  # 큐별 지표(대기·처리 중·소비자 수, DLQ 깊이)는 per-object 엔드포인트에만 있다.
   - job_name: rabbitmq
+    metrics_path: /metrics/per-object
     static_configs:
       - targets: ["rabbitmq:15692"]
+
+  # 제어기는 호스트에서 돈다 (python3 -m controller.main). 돌지 않으면 이 대상만 down 으로 보인다.
+  - job_name: controller
+    static_configs:
+      - targets: ["host.docker.internal:9108"]
