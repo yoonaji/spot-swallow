@@ -2,6 +2,9 @@ package io.spotswallow.worker;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
+import java.sql.SQLRecoverableException;
+import java.sql.SQLTransientException;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -20,6 +23,7 @@ import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.TransientDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.TransactionException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
@@ -79,13 +83,16 @@ public class SettlementWorker {
         try {
             processing.record(() -> process(jobId));
             channel.basicAck(tag, false);
-        } catch (TransientDataAccessException | DataAccessResourceFailureException e) {
-            // DB 일시 장애: 잠시 뒤 큐로 되돌려 다시 처리한다. 커밋되지 않았으므로 안전하다.
-            log.warn("transient DB failure on {}, requeue: {}", jobId, e.toString());
-            requeued.increment();
-            sleepQuietly(1000);
-            channel.basicNack(tag, false, true);
         } catch (Exception e) {
+            if (isTransientDbFailure(e)) {
+                // DB 일시 장애: 잠시 뒤 큐로 되돌려 다시 처리한다. 커밋되지 않았으면 다시 계산하고,
+                // 커밋됐는데 응답만 못 받았으면 재처리 때 결과 PK 가 막으므로 어느 쪽이든 안전하다.
+                log.warn("transient DB failure on {}, requeue: {}", jobId, e.toString());
+                requeued.increment();
+                sleepQuietly(1000);
+                channel.basicNack(tag, false, true);
+                return;
+            }
             // 다시 해도 실패할 메시지(독성 메시지): DLQ 로 격리해 큐 전체가 막히지 않게 한다.
             log.error("unprocessable message {}, dead-lettering", body, e);
             deadLettered.increment();
@@ -156,6 +163,28 @@ public class SettlementWorker {
         } catch (Exception ignored) {
             // 감사 기록 실패가 DLQ 격리를 막지 않게 한다.
         }
+    }
+
+    /**
+     * 다시 하면 성공할 DB 장애인가. DB 재시작 중에는 TransientDataAccessException 말고도
+     * "JDBC rollback failed"(TransactionSystemException), 트랜잭션 시작 실패(CannotCreateTransactionException)처럼
+     * DataAccessException 이 아닌 예외가 나온다. 이것들을 독성 메시지로 보면 멀쩡한 작업이 DLQ 로 간다
+     * (장애 주입 매트릭스 postgres-restart 행에서 400건 중 2건, 재현 2/2).
+     * 그래서 원인 사슬을 따라가며 연결 계열 SQLState(08xxx 연결, 57P0x 관리자 종료)까지 본다.
+     */
+    static boolean isTransientDbFailure(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            if (t instanceof TransientDataAccessException || t instanceof DataAccessResourceFailureException
+                    || t instanceof TransactionException
+                    || t instanceof SQLTransientException || t instanceof SQLRecoverableException) {
+                return true;
+            }
+            if (t instanceof SQLException sql && sql.getSQLState() != null
+                    && (sql.getSQLState().startsWith("08") || sql.getSQLState().startsWith("57P"))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static String parseJobId(String body) {
