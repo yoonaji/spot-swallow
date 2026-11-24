@@ -74,11 +74,13 @@ public class SettlementWorker {
     @RabbitListener(queues = RabbitTopology.JOBS_QUEUE, ackMode = "MANUAL")
     public void onMessage(Message message, Channel channel) throws IOException {
         long tag = message.getMessageProperties().getDeliveryTag();
-        if (Boolean.TRUE.equals(message.getMessageProperties().isRedelivered())) {
-            redelivered.increment();
-        }
         String body = new String(message.getBody(), StandardCharsets.UTF_8);
         String jobId = parseJobId(body);
+        if (Boolean.TRUE.equals(message.getMessageProperties().isRedelivered())) {
+            redelivered.increment();
+            // 다른 워커가 하다 만 작업을 다시 받음 (회수 실험에서 다시 계산한 양을 셀 때 쓴다)
+            log.info("REDELIVERED {}", jobId);
+        }
 
         try {
             processing.record(() -> process(jobId));

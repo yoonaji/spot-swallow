@@ -69,6 +69,7 @@ class Injector(threading.Thread):
             kill_at, notice_at, cid = item
             if notice_at <= now and cid not in self.notices:
                 self.notices[cid] = kill_at
+                self.fleet.notify(cid)   # 워커에게도 알린다 (새 작업 중단, 처리 중인 것만 마무리)
                 changed = True
             if kill_at <= now:
                 self.fleet.kill(cid)
