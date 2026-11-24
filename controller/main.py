@@ -27,6 +27,7 @@ from capacity.policies import (AwsCapacityRebalance, Config, Context, Controller
                                Proposed, ProposedWithNotice, QueueReactive)
 from controller.fleet import DockerFleet, plan_changes
 from controller.injector import Injector
+from controller.metrics import Metrics
 from controller.observe import DbObserver, Market, RabbitObserver
 from sim import traces
 
@@ -59,6 +60,7 @@ def main():
     ap.add_argument("--duration", type=float, default=1800)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-injector", action="store_true")
+    ap.add_argument("--metrics-port", type=int, default=9108, help="Prometheus 지표 포트 (0 이면 끔)")
     ap.add_argument("--log", help="기본값: data/live/<정책>-<시각>.csv")
     a = ap.parse_args()
 
@@ -110,6 +112,8 @@ def main():
     f = open(log_path, "w", newline="")
     w = csv.DictWriter(f, fieldnames=fields)
     w.writeheader()
+
+    metrics = Metrics(a.metrics_port).start() if a.metrics_port else None
 
     t0 = time.time()
     last_target = (n0, 0)
@@ -169,12 +173,31 @@ def main():
                    "launched": launched, "stopped": stopped, "evictions": injector.kills if injector else 0}
             w.writerow(row)
             f.flush()
+            if metrics:
+                export(metrics, row, ctx)
             print(row, flush=True)
     finally:
         if injector:
             injector.stop_flag.set()
         f.close()
+        if metrics:
+            metrics.stop()
         print(f"log: {log_path}")
+
+
+def export(m, row, ctx):
+    m.set("swallow_controller_target_workers", row["target_spot"], kind="spot")
+    m.set("swallow_controller_target_workers", row["target_od"], kind="od")
+    m.set("swallow_controller_alive_workers", row["spot_alive"], kind="spot")
+    m.set("swallow_controller_alive_workers", row["od_alive"], kind="od")
+    m.set("swallow_controller_ready_workers", row["ready"])
+    m.set("swallow_controller_nbase", math.ceil(ctx.lam / ctx.mu) if ctx.mu > 0 else 0)
+    m.set("swallow_controller_lambda", ctx.lam)
+    m.set("swallow_controller_mu", ctx.mu)
+    m.set("swallow_controller_tready_quantile_seconds", ctx.tready_q)
+    m.set("swallow_controller_concurrent_eviction_fraction", ctx.f_p)
+    m.set("swallow_controller_spot_available", row["spot_available"])
+    m.set("swallow_controller_evictions_total", row["evictions"])
 
 
 if __name__ == "__main__":
