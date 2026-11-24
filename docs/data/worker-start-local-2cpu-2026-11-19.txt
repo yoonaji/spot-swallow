@@ -1,0 +1,11 @@
+# 실제 settlement-worker jar 기동 시간 (taskset 2코어, 로컬 RabbitMQ/Postgres). 열: 실행~"Started" 로그(ms), Spring 이 보고한 process running 시간(초)
+4633 process running for 4.585
+4741 process running for 4.721
+5242 process running for 5.207
+4203 process running for 4.174
+4311 process running for 4.283
+4149 process running for 4.122
+3532 process running for 3.481
+4322 process running for 4.283
+4408 process running for 4.379
+3682 process running for 3.634

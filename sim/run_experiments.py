@@ -21,12 +21,19 @@ from sim.engine import Scenario, run
 CPU_POOL = "preemption-1-node-aws-04-19-2023-pool3"          # 평상시: CPU 인스턴스, 3개 영역 풀
 MULTI_NODE = "preemption-4-node-aws-08-03-2023-us-west-2c_v100_1"  # 회수 집중: 한 영역 4노드
 
+# 2026-11-19 EC2 실측 (docs/tready-ec2.md): c6i.large 서울, 20회.
+# 미리 구운 이미지 기준 Tready = 요청~사용자 스크립트 시작(p50 9.9초) + 실제 워커 기동(p50 4.3초, 로컬 2코어)
+MEASURED_TREADY_MEDIAN = 14.6
+MEASURED_TREADY_SIGMA = 0.06   # q95/중앙값 ≈ 1.1
+
 SCENARIOS = {
     "normal": Scenario("normal", CPU_POOL),
     "concentrated": Scenario("concentrated", MULTI_NODE),
     "surge": Scenario("surge", CPU_POOL, surges=[(6 * 3600, 7 * 3600, 2.0)]),
     "delay-x2": Scenario("delay-x2", MULTI_NODE, tready_mult=2.0),
     "delay-x4": Scenario("delay-x4", MULTI_NODE, tready_mult=4.0),
+    "measured": Scenario("measured", MULTI_NODE, tready_median=MEASURED_TREADY_MEDIAN,
+                         tready_sigma=MEASURED_TREADY_SIGMA),
 }
 SLO = 300.0
 
@@ -62,7 +69,7 @@ def experiments(seeds):
     # 핵심 질문: 복구 시간이 얼마를 넘으면 회수 경고 후 교체(AWS)만으로는 부족한가
     out["tready_sweep"] = [(replace(SCENARIOS["concentrated"], name=f"tready-x{m:g}", tready_mult=m), pol, base, s,
                             {"tready_mult": m})
-                           for m in (0.5, 1, 1.5, 2, 3, 4, 6)
+                           for m in (0.1, 0.25, 0.5, 1, 1.5, 2, 3, 4, 6)
                            for pol in (AwsCapacityRebalance(), FixedSpare(2), Proposed(), ProposedWithNotice(),
                                        OnDemandOnly())
                            for s in S]

@@ -43,8 +43,11 @@ MARK = re.compile(r"SWALLOW_MARK (\w+) (\d{13})")
 USER_DATA = r"""#!/bin/bash
 mark() { line="SWALLOW_MARK $1 $(date +%s%3N)"; echo "$line"; echo "$line" > /dev/console 2>/dev/null || true; }
 mark boot
+# 안전장치: 측정 스크립트(로컬)가 죽어도 인스턴스가 스스로 꺼지게 한다 (shutdown 동작 = terminate).
+shutdown -h +{watchdog_min} >/dev/null 2>&1 || true
 dnf install -y -q java-21-amazon-corretto-headless >/dev/null 2>&1
 mark jdk_installed
+{bootstrap}
 cat > /tmp/Ready.java <<'EOF'
 public class Ready { public static void main(String[] a) throws Exception {
   // 워커 기동 비용을 흉내: 클래스 로딩 + 짧은 워밍업
@@ -53,6 +56,17 @@ EOF
 cd /tmp && java Ready.java >/dev/null 2>&1
 mark ready
 """
+
+# 보안 부트스트랩 같은 추가 단계를 JDK 설치 후, 앱 기동 전에 끼워 넣는다.
+# 기본 AMI 와 달리 "미리 구운 이미지" 에도 남는 단계이므로 tready_baked_s 에 포함한다.
+BOOTSTRAP_WRAP = """mark bootstrap_start
+{body}
+mark bootstrap_done"""
+
+
+def build_user_data(bootstrap_body, watchdog_min):
+    boot = BOOTSTRAP_WRAP.format(body=bootstrap_body) if bootstrap_body else ""
+    return USER_DATA.replace("{bootstrap}", boot).replace("{watchdog_min}", str(watchdog_min))
 
 
 def now_ms():
@@ -99,7 +113,8 @@ def one_run(ec2, args, ami, run_no):
             InstanceMarketOptions={"MarketType": "spot",
                                    "SpotOptions": {"SpotInstanceType": "one-time",
                                                    "InstanceInterruptionBehavior": "terminate"}},
-            UserData=base64.b64encode(USER_DATA.encode()).decode(),
+            UserData=base64.b64encode(args.user_data.encode()).decode(),
+            InstanceInitiatedShutdownBehavior="terminate",
             TagSpecifications=[{"ResourceType": "instance",
                                 "Tags": [{"Key": "Project", "Value": "spot-swallow"},
                                          {"Key": "Purpose", "Value": "tready-measurement"}]}],
@@ -133,18 +148,21 @@ def derive(row):
         d["boot_s"] = round((row["t_boot"] - tr) / 1000, 1)
     if row.get("t_jdk_installed") and row.get("t_boot"):
         d["install_s"] = round((row["t_jdk_installed"] - row["t_boot"]) / 1000, 1)
-    if row.get("t_ready") and row.get("t_jdk_installed"):
-        d["app_start_s"] = round((row["t_ready"] - row["t_jdk_installed"]) / 1000, 1)
+    if row.get("t_bootstrap_done") and row.get("t_bootstrap_start"):
+        d["bootstrap_s"] = round((row["t_bootstrap_done"] - row["t_bootstrap_start"]) / 1000, 3)  # 짧아서 ms 까지
+    app_from = row.get("t_bootstrap_done") or row.get("t_jdk_installed")
+    if row.get("t_ready") and app_from:
+        d["app_start_s"] = round((row["t_ready"] - app_from) / 1000, 1)
     if tr and row.get("t_boot") and "app_start_s" in d:
-        # 미리 구운 이미지라면 설치 구간이 없으므로 Tready = 부팅까지 + 앱 기동
-        d["tready_baked_s"] = round(d["boot_s"] + d["app_start_s"], 1)
+        # 미리 구운 이미지라면 설치 구간이 없으므로 Tready = 부팅까지 + (보안 부트스트랩) + 앱 기동
+        d["tready_baked_s"] = round(d["boot_s"] + d.get("bootstrap_s", 0) + d["app_start_s"], 1)
     if tr and row.get("t_ready"):
         d["tready_this_ami_s"] = round((row["t_ready"] - tr) / 1000, 1)
     return d
 
 
-FIELDS = ["run", "started_at", "region", "instance_type", "az", "instance_id",
-          "provision_s", "boot_s", "install_s", "app_start_s", "tready_baked_s", "tready_this_ami_s", "error"]
+FIELDS = ["run", "variant", "started_at", "region", "instance_type", "az", "instance_id",
+          "provision_s", "boot_s", "install_s", "bootstrap_s", "app_start_s", "tready_baked_s", "tready_this_ami_s", "error"]
 
 
 def main():
@@ -158,6 +176,9 @@ def main():
     p.add_argument("--running-timeout", type=int, default=600)
     p.add_argument("--ready-timeout", type=int, default=900)
     p.add_argument("--out", default="data/tready.csv")
+    p.add_argument("--variant", default="baseline", help="결과 행에 남길 조건 이름 (예: baseline, dyn-secret)")
+    p.add_argument("--bootstrap-script", help="JDK 설치 후 앱 기동 전에 실행할 셸 스크립트 파일 (보안 부트스트랩 측정용)")
+    p.add_argument("--watchdog-min", type=int, default=30, help="인스턴스가 스스로 종료하기까지의 분")
     p.add_argument("--dry-run", action="store_true", help="권한만 확인하고 인스턴스는 만들지 않는다")
     a = p.parse_args()
 
@@ -166,6 +187,8 @@ def main():
         from botocore.exceptions import ClientError
     except ImportError:
         sys.exit("boto3 가 필요합니다: pip install boto3")
+
+    a.user_data = build_user_data(open(a.bootstrap_script).read() if a.bootstrap_script else "", a.watchdog_min)
 
     ec2 = boto3.client("ec2", region_name=a.region)
     ssm = boto3.client("ssm", region_name=a.region)
@@ -190,7 +213,7 @@ def main():
         for i in range(1, a.runs + 1):
             started = datetime.now(timezone.utc).isoformat(timespec="seconds")
             row = one_run(ec2, a, ami, i)
-            out = {"run": i, "started_at": started, "region": a.region, "instance_type": a.instance_type,
+            out = {"run": i, "variant": a.variant, "started_at": started, "region": a.region, "instance_type": a.instance_type,
                    "az": row.get("az"), "instance_id": row.get("instance_id"), "error": row.get("error"),
                    **derive(row)}
             w.writerow(out)
