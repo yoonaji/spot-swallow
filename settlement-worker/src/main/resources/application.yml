@@ -28,6 +28,13 @@ swallow:
     id: ${WORKER_ID:${HOSTNAME:worker-local}}
     # 거래 1건당 추가 처리 시간(마이크로초). 처리율 μ 를 실험에 맞게 조절한다.
     work-micros-per-tx: ${WORK_MICROS_PER_TX:0}
+  notice:
+    # 회수 경고를 읽는 곳: none | file | imds (SpotNoticeWatcher)
+    source: ${SPOT_NOTICE_SOURCE:none}
+    file: ${SPOT_NOTICE_FILE:/tmp/spot-notice}
+    poll-ms: 1000
+    # 처리 중인 작업을 끝내기까지 기다리는 최대 시간. 경고 후 2분 안에 끝나야 하므로 110초.
+    drain-timeout-ms: 110000
   chaos:
     # NONE | BEFORE_COMMIT | AFTER_COMMIT_BEFORE_ACK
     crash-point: ${CHAOS_CRASH_POINT:NONE}

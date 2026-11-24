@@ -72,6 +72,10 @@ class DockerFleet:
         if cid in self.workers:
             self.workers[cid].state = "dead"
 
+    def notify(self, cid, path="/tmp/spot-notice"):
+        """회수 경고(2분 전 중단 알림)를 워커에 전달한다. 워커(SpotNoticeWatcher)는 새 작업을 멈추고 처리 중인 것만 끝낸다."""
+        subprocess.Popen(["docker", "exec", cid, "touch", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
     def kill(self, cid):
         """회수: 경고 없이 즉시 종료 (kill -9)."""
         self._run("docker", "kill", "-s", "KILL", cid, check=False)
