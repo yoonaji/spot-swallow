@@ -25,14 +25,19 @@ class Worker:
     ready_at: float = None
 
 
-def plan_changes(workers, target_spot, target_od, doomed=frozenset()):
+def plan_changes(workers, target_spot, target_od, doomed=frozenset(), make_before_break=True):
     """
-    목표 대수에 맞추기 위한 변경 계획 (순수 함수, 시뮬레이터 engine._reconcile 과 같은 규칙).
+    목표 대수에 맞추기 위한 변경 계획 (순수 함수).
     회수 경고를 받은 워커(doomed)는 없는 셈 친다. 줄일 때는 부팅 중 → 최근에 뜬 순서로 내린다.
+
+    make_before_break: 준비된(ready) 워커는 "준비된 워커 수가 목표 합계보다 많은 만큼"만 내린다.
+      예) 스팟 4대 → (스팟 1, 온디맨드 3) 으로 바꿀 때, 온디맨드 3대가 준비되기 전에는 스팟 3대를 내리지 않는다.
+      부팅 중인 워커는 아직 일을 하지 않으므로 언제든 내린다. 못 내린 워커는 다음 주기에 다시 계산한다.
+      False 면 예전 동작(목표보다 많으면 바로 내림, 시뮬레이터 engine._reconcile 과 같은 규칙).
     반환: (띄울 spot 수, 띄울 od 수, 내릴 cid 목록)
     """
     launches = {}
-    stops = []
+    candidates = []
     for kind, target in (("spot", target_spot), ("od", target_od)):
         alive = [w for w in workers if w.kind == kind and w.state != "dead" and w.cid not in doomed]
         diff = target - len(alive)
@@ -40,7 +45,19 @@ def plan_changes(workers, target_spot, target_od, doomed=frozenset()):
             launches[kind] = diff
         elif diff < 0:
             order = sorted(alive, key=lambda w: (w.state != "booting", -w.launched))
-            stops += [w.cid for w in order[:-diff]]
+            candidates += order[:-diff]
+    if not make_before_break:
+        stops = [w.cid for w in candidates]
+    else:
+        ready = sum(1 for w in workers if w.state == "ready" and w.cid not in doomed)
+        spare_ready = max(0, ready - (target_spot + target_od))
+        stops = []
+        for w in candidates:
+            if w.state != "ready":
+                stops.append(w.cid)
+            elif spare_ready > 0:
+                stops.append(w.cid)
+                spare_ready -= 1
     return launches.get("spot", 0), launches.get("od", 0), stops
 
 

@@ -62,7 +62,7 @@ def run_one(policy, a, seed):
         sys.exit(f"docker compose up failed: {up.stderr[-400:]}")
     wait_for_api(BASE, timeout=180)
     os.makedirs("data/live-compare", exist_ok=True)
-    log = f"data/live-compare/{policy}-boot{int(a.boot_median)}-s{seed}-{int(time.time())}.csv"
+    log = f"data/live-compare/{policy}{a.tag}-boot{int(a.boot_median)}-s{seed}-{int(time.time())}.csv"
     env = {**os.environ, "WORK_MICROS_PER_TX": str(a.work_micros)}
     out = open(log.replace(".csv", ".out"), "w")
     ctl = subprocess.Popen([sys.executable, "-m", "controller.main", "--policy", policy, "--duration", str(a.duration),
@@ -93,11 +93,20 @@ def run_one(policy, a, seed):
     n = len(lat)
     viol = sum(1 for x in lat if x > a.slo)
     spot_min, od_min, rows = usage(log)
+    # 워밍업(회수 주입 전) 구간에 정책 전환으로 처리 능력이 빠지지 않았는지 본다
+    warm = [r for r in rows if float(r["t"]) < a.injector_delay][2:]
+    after = [r for r in rows if float(r["t"]) >= a.injector_delay]
+    lat_all = sorted(float(x) for x in sh(*PSQL, "SELECT extract(epoch FROM coalesce(completed_at, now()) - accepted_at) "
+                                                 "FROM settlement_jobs").split())
     row = {
         "policy": policy, "boot_median_s": a.boot_median, "seed": seed, "jobs_after_injection": n,
         "violation_pct": round(100 * viol / n, 2) if n else 0,
         "p50_s": round(lat[n // 2], 1) if n else 0, "p95_s": round(lat[int(0.95 * (n - 1))], 1) if n else 0,
         "max_s": round(lat[-1], 1) if n else 0,
+        "violation_all_pct": round(100 * sum(1 for x in lat_all if x > a.slo) / len(lat_all), 2) if lat_all else 0,
+        "warm_min_ready": min((int(r["ready"]) for r in warm), default=0),
+        "warm_max_queue": max((int(r["queue"]) for r in warm), default=0),
+        "after_max_queue": max((int(r["queue"]) for r in after), default=0),
         "spot_worker_min": round(spot_min, 1), "od_worker_min": round(od_min, 1),
         "cost_usd_per_h_equiv": round((spot_min * SPOT + od_min * OD) / 60, 3),
         "evictions": rows[-1]["evictions"] if rows else 0,
@@ -124,6 +133,7 @@ def main():
     ap.add_argument("--rate", type=float, default=1.8)
     ap.add_argument("--work-micros", type=int, default=10000)
     ap.add_argument("--slo", type=float, default=300)
+    ap.add_argument("--tag", default="", help="로그 파일 이름에 붙일 표시 (예: mbb)")
     a = ap.parse_args()
 
     rows = []
