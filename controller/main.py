@@ -23,7 +23,7 @@ import random
 import time
 
 from capacity.estimators import DecayingMean, DecayingRate, EvictionHistory, QuantileHistory
-from capacity.policies import (AwsCapacityRebalance, Config, Context, Controller, FixedSpare, OnDemandOnly,
+from capacity.policies import (AwsCapacityRebalance, AwsRebalanceOnDemandBase, Config, Context, Controller, FixedSpare, OnDemandOnly,
                                Proposed, ProposedWithNotice, QueueReactive)
 from controller.fleet import DockerFleet, plan_changes
 from controller.injector import Injector
@@ -34,6 +34,8 @@ from sim import traces
 POLICIES = {
     "proposed": Proposed, "proposed+rebalance": ProposedWithNotice, "aws-rebalance": AwsCapacityRebalance,
     "queue-reactive": QueueReactive, "on-demand-only": OnDemandOnly,
+    "aws-rebalance+odbase2": lambda: AwsRebalanceOnDemandBase(2),
+    "aws-rebalance+odbase3": lambda: AwsRebalanceOnDemandBase(3),
     "fixed-1": lambda: FixedSpare(1), "fixed-2": lambda: FixedSpare(2), "fixed-4": lambda: FixedSpare(4),
 }
 DEFAULT_TRACE = "preemption-4-node-aws-08-03-2023-us-west-2c_v100_1"
