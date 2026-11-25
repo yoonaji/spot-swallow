@@ -29,7 +29,7 @@ GameDay 와 실제 운영에서 알림이 울렸을 때 이 순서대로 본다.
 ## 대사 불일치 발생
 
 뜻: 입력 거래로 다시 계산한 정산과 확정 결과가 다르다. 유실(`statusResultMismatch`), 금액 불일치(`amountMismatch`),
-이중 확정(`doubleCompleted`) 중 하나다. **가장 심각한 알림이다.**
+이중 확정(`doubleCompleted`), 감사 체인 이상(`auditChain`) 중 하나다. **가장 심각한 알림이다.**
 
 1. `curl -s localhost:8080/reconciliation` 으로 어느 항목인지 본다.
 2. 금액 불일치: 해당 작업을 찾는다.
@@ -40,8 +40,12 @@ GameDay 와 실제 운영에서 알림이 울렸을 때 이 순서대로 본다.
     WHERE r.gross_amount <> t.gross;
    ```
    `job_events` 에서 그 작업의 처리 이력(어느 워커가, 몇 번)을 본다. 워커 계산 버그인지, 사람이 바꾼 것인지 가린다.
-3. 이중 확정: 멱등성(결과 테이블 `job_id` PK)이 깨졌다는 뜻이다. 새 작업 접수를 멈추고 스키마·최근 배포를 확인한다.
-4. 고친 결과는 입력 거래에서 다시 계산한 값으로 바로잡고, 무엇을 바꿨는지 장애 보고서에 남긴다.
+   누가 바꿨는지는 감사 체인에 있다: `SELECT seq, action, db_user, client_addr, recorded_at, payload FROM result_audit WHERE job_id = '<job>' ORDER BY seq;`
+   (`swallow_worker_app` 은 결과를 바꿀 수 없으므로, INSERT 가 아닌 줄은 관리자 계정이 한 것이다.)
+3. 감사 체인 이상: `untracked` 는 감사 트리거를 끄고 결과를 바꿨다는 뜻, `brokenLinks` 는 감사 기록 자체를 고쳤다는 뜻이다.
+   둘 다 DB 관리자 권한이 쓰였다는 뜻이므로 계정·접속 기록부터 확인하고, 결과는 입력 거래에서 다시 계산해 바로잡는다.
+4. 이중 확정: 멱등성(결과 테이블 `job_id` PK)이 깨졌다는 뜻이다. 새 작업 접수를 멈추고 스키마·최근 배포를 확인한다.
+5. 고친 결과는 입력 거래에서 다시 계산한 값으로 바로잡고, 무엇을 바꿨는지 장애 보고서에 남긴다.
 
 <a id="dlq"></a>
 ## DLQ에 메시지가 있음

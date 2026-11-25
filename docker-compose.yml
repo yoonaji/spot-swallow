@@ -12,6 +12,10 @@ services:
       POSTGRES_DB: swallow
       POSTGRES_USER: swallow
       POSTGRES_PASSWORD: swallow
+      # 스팟 워커 전용 계정의 비밀번호 (계정은 init 스크립트, 권한은 Flyway V3)
+      WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD:-swallow_worker}
+    volumes:
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
     ports: ["5432:5432"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U swallow -d swallow"]
@@ -46,6 +50,9 @@ services:
     build: ./settlement-worker
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/swallow
+      # 최소 권한 계정: 결과는 추가만 할 수 있고 바꾸거나 지울 수 없다 (V3)
+      DB_USER: swallow_worker_app
+      DB_PASSWORD: ${WORKER_DB_PASSWORD:-swallow_worker}
       RABBIT_HOST: rabbitmq
       WORK_MICROS_PER_TX: ${WORK_MICROS_PER_TX:-1000}
       CHAOS_CRASH_POINT: ${CHAOS_CRASH_POINT:-NONE}

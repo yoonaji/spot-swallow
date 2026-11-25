@@ -28,6 +28,7 @@ public class OperationalMetrics {
     private final AtomicLong doubleCompleted = new AtomicLong();
     private final AtomicLong deadLettered = new AtomicLong();
     private final AtomicLong stalePendingJobs = new AtomicLong();
+    private final AtomicLong auditViolations = new AtomicLong();
 
     public OperationalMetrics(JdbcTemplate jdbc, MeterRegistry registry, ReconciliationController reconciliation) {
         this.jdbc = jdbc;
@@ -36,6 +37,8 @@ public class OperationalMetrics {
         Gauge.builder("swallow.recon.amount_mismatch", amountMismatch, AtomicLong::get).register(registry);
         Gauge.builder("swallow.recon.double_completed", doubleCompleted, AtomicLong::get).register(registry);
         Gauge.builder("swallow.recon.dead_lettered_jobs", deadLettered, AtomicLong::get).register(registry);
+        // 감사 체인이 깨졌거나(brokenLinks) 체인 밖에서 결과가 바뀐(untracked) 건수
+        Gauge.builder("swallow.recon.audit_violations", auditViolations, AtomicLong::get).register(registry);
         Gauge.builder("swallow.recon.stale_pending_jobs", stalePendingJobs, AtomicLong::get).register(registry);
         Gauge.builder("swallow.jobs.oldest_pending_age_seconds", oldestPendingJobAgeSeconds, AtomicLong::get).register(registry);
         Gauge.builder("swallow.jobs.pending", pendingJobs, AtomicLong::get).register(registry);
@@ -60,6 +63,8 @@ public class OperationalMetrics {
         doubleCompleted.set(((Number) r.get("doubleCompleted")).longValue());
         deadLettered.set(((Number) r.get("deadLettered")).longValue());
         stalePendingJobs.set(((Number) r.get("stalePendingJobs")).longValue());
+        Map<?, ?> audit = (Map<?, ?>) r.get("auditChain");
+        auditViolations.set(((Number) audit.get("brokenLinks")).longValue() + ((Number) audit.get("untracked")).longValue());
     }
 
     private long value(String sql) {
