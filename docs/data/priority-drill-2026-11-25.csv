@@ -1,0 +1,3 @@
+mode,seed,jobs,urgent_jobs,urgent_miss_pct,urgent_p50_s,urgent_p95_s,urgent_max_s,normal_miss_pct,normal_p50_s,normal_p95_s,normal_max_s,elapsed_s,consistent,lost,amount_mismatch
+fifo,2000,923,184,68.48,157.4,216.5,221.9,0.0,160.0,214.8,224.3,738.9,True,0,0
+priority,2000,923,184,0.0,3.3,6.5,8.7,0.0,183.7,260.8,265.5,741.3,True,0,0

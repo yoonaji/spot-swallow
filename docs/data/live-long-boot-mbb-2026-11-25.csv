@@ -1,0 +1,8 @@
+segment,policy,boot_median_s,seed,jobs_after_injection,violation_pct,p50_s,p95_s,max_s,violation_all_pct,warm_min_ready,warm_max_queue,after_max_queue,spot_worker_min,od_worker_min,cost_usd_per_h_equiv,evictions,max_od,consistent,lost,amount_mismatch,load_tail,log
+321.7h,proposed+rebalance,600,0,2613,0.0,7.6,70.6,79.3,0.0,4,15,128,94.5,162.0,0.347,1,5,True,0,0,RESULT: FAIL,data/live-compare/proposed+rebalance-mbb-boot600-s0-1795579153.csv
+321.7h,on-demand-only,600,0,2613,0.0,3.6,8.2,12.0,0.0,4,12,14,51.0,178.0,0.349,0,4,True,0,0,RESULT: FAIL,data/live-compare/on-demand-only-mbb-boot600-s0-1795581914.csv
+321.7h,aws-rebalance,600,0,2613,48.76,288.7,567.9,583.8,30.6,4,23,997,253.5,126.5,0.382,8,9,True,0,0,RESULT: FAIL,data/live-compare/aws-rebalance-mbb-boot600-s0-1795584661.csv
+321.7h,fixed-2,600,0,2603,40.3,81.7,484.5,492.1,25.2,4,16,838,326.0,87.5,0.357,9,7,True,0,0,RESULT: FAIL,data/live-compare/fixed-2-mbb-boot600-s0-1795587568.csv
+296.0h,aws-rebalance+odbase2,600,0,2613,0.0,109.6,229.5,242.3,0.0,4,16,398,81.5,169.0,0.352,2,7,True,0,0,RESULT: FAIL,data/live-compare/aws-rebalance+odbase2-segB-boot600-s0-1795602388.csv
+296.0h,aws-rebalance,600,0,2616,47.82,290.1,534.1,546.0,30.05,4,21,932,117.5,162.0,0.361,6,10,True,0,0,RESULT: FAIL,data/live-compare/aws-rebalance-segB-boot600-s0-1795599647.csv
+296.0h,proposed+rebalance,600,0,2613,0.0,15.2,80.0,91.1,0.0,4,15,134,69.5,168.0,0.342,1,5,True,0,0,RESULT: FAIL,data/live-compare/proposed+rebalance-segB-boot600-s0-1795596906.csv
