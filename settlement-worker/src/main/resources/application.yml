@@ -28,6 +28,10 @@ swallow:
     id: ${WORKER_ID:${HOSTNAME:worker-local}}
     # 거래 1건당 추가 처리 시간(마이크로초). 처리율 μ 를 실험에 맞게 조절한다.
     work-micros-per-tx: ${WORK_MICROS_PER_TX:0}
+    # 0 보다 크면 거래 N 건마다 중간 합계를 저장하고, 회수 뒤 다시 받은 작업은 저장 지점부터 계산한다.
+    checkpoint-every-tx: ${CHECKPOINT_EVERY_TX:0}
+  queue:
+    max-priority: ${QUEUE_MAX_PRIORITY:10}
   notice:
     # 회수 경고를 읽는 곳: none | file | imds (SpotNoticeWatcher)
     source: ${SPOT_NOTICE_SOURCE:none}

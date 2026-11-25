@@ -16,6 +16,13 @@ spring:
     publisher-confirm-type: correlated
 
 swallow:
+  queue:
+    # 0 보다 크면 우선순위 큐. 급한 작업(URGENT)을 먼저 꺼낸다. 워커와 같은 값이어야 한다. 0 이면 접수 순서(FIFO).
+    max-priority: ${QUEUE_MAX_PRIORITY:10}
+  deadline:
+    # 마감 등급별 목표 시간(초). 접수 시각 + 이 값이 deadline_at 이 된다.
+    urgent-seconds: ${DEADLINE_URGENT_SECONDS:120}
+    normal-seconds: ${DEADLINE_NORMAL_SECONDS:300}
   outbox:
     poll-ms: 200
     batch-size: 50

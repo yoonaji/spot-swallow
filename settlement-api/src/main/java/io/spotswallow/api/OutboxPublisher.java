@@ -30,7 +30,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class OutboxPublisher {
     private static final Logger log = LoggerFactory.getLogger(OutboxPublisher.class);
 
-    record OutboxRow(long outboxId, String jobId, String payload) {}
+    record OutboxRow(long outboxId, String jobId, String payload, int priority) {}
 
     private final JdbcTemplate jdbc;
     private final TransactionTemplate tx;
@@ -66,18 +66,20 @@ public class OutboxPublisher {
     private void publishBatch() {
         // SKIP LOCKED: 발행기를 여러 개 띄워도 같은 레코드를 동시에 잡지 않는다.
         List<OutboxRow> rows = jdbc.query("""
-                SELECT outbox_id, job_id, payload FROM outbox
+                SELECT outbox_id, job_id, payload, priority FROM outbox
                  WHERE status = 'PENDING'
                  ORDER BY outbox_id
                  LIMIT ?
                  FOR UPDATE SKIP LOCKED
-                """, (rs, i) -> new OutboxRow(rs.getLong(1), rs.getString(2), rs.getString(3)), batchSize);
+                """, (rs, i) -> new OutboxRow(rs.getLong(1), rs.getString(2), rs.getString(3), rs.getInt(4)),
+                batchSize);
 
         for (OutboxRow row : rows) {
             Message message = MessageBuilder.withBody(row.payload().getBytes(StandardCharsets.UTF_8))
                     .setContentType("application/json")
                     .setDeliveryMode(MessageDeliveryMode.PERSISTENT)
                     .setMessageId(row.jobId())
+                    .setPriority(row.priority())   // 우선순위 큐가 아니면 브로커가 무시한다
                     .build();
             CorrelationData correlation = new CorrelationData(Long.toString(row.outboxId()));
             rabbit.send(RabbitTopology.EXCHANGE, RabbitTopology.JOBS_ROUTING_KEY, message, correlation);

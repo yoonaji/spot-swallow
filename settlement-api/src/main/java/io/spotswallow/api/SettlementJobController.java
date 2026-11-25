@@ -21,7 +21,8 @@ public class SettlementJobController {
         this.service = service;
     }
 
-    public record SettlementRequest(String merchantId, LocalDate settlementDate) {}
+    /** priority: URGENT | NORMAL (생략하면 NORMAL) */
+    public record SettlementRequest(String merchantId, LocalDate settlementDate, String priority) {}
 
     /** 202: 새로 접수됨. 200: 이미 접수된 요청 (멱등). */
     @PostMapping
@@ -29,7 +30,13 @@ public class SettlementJobController {
         if (request.merchantId() == null || request.merchantId().isBlank() || request.settlementDate() == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "merchantId and settlementDate are required"));
         }
-        var result = service.accept(request.merchantId(), request.settlementDate());
+        SettlementJobService.Priority priority;
+        try {
+            priority = SettlementJobService.Priority.parse(request.priority());
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", "priority must be URGENT or NORMAL"));
+        }
+        var result = service.accept(request.merchantId(), request.settlementDate(), priority);
         HttpStatus status = result.created() ? HttpStatus.ACCEPTED : HttpStatus.OK;
         return ResponseEntity.status(status).body(Map.of("jobId", result.jobId(), "created", result.created()));
     }

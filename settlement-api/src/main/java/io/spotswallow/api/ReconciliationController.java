@@ -73,6 +73,17 @@ public class ReconciliationController {
         report.put("duplicateDeliveriesAbsorbed", duplicateDeliveriesAbsorbed);
         report.put("deadLettered", deadLettered);
         report.put("outboxPending", outboxPending);
+        // 마감 등급별 마감 초과 (완료가 마감보다 늦었거나, 아직 안 끝났는데 마감이 지남)
+        Map<String, Object> deadlines = new LinkedHashMap<>();
+        jdbc.query("""
+                SELECT priority, count(*),
+                       count(*) FILTER (WHERE deadline_at IS NOT NULL
+                                          AND coalesce(completed_at, now()) > deadline_at)
+                  FROM settlement_jobs GROUP BY priority ORDER BY priority
+                """, rs -> {
+            deadlines.put(rs.getString(1), Map.of("jobs", rs.getLong(2), "missed", rs.getLong(3)));
+        });
+        report.put("deadlineByPriority", deadlines);
         report.put("consistent", statusResultMismatch == 0 && amountMismatch == 0 && doubleCompleted == 0);
         report.put("allSettled", pendingJobs == 0 && results == acceptedJobs);
         return report;
