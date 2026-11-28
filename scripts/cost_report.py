@@ -25,6 +25,7 @@ PRICES = {
 POLICIES = [
     ("on-demand-only", "온디맨드만 쓰기", "가장 안전, 가장 비쌈"),
     ("aws-rebalance", "AWS 기본 (재조정만)", "가장 쌈, 복구가 느리면 위험"),
+    ("aws-rebalance+3", "기존 논문식 고정 여유: AWS 재조정 + 스팟 여유 3대", "여유도 스팟이라 몰려 회수되면 같이 사라짐"),
     ("aws-rebalance+odbase2", "AWS 혼합: 온디맨드 2대 고정", "중간"),
     ("aws-rebalance+odbase3", "AWS 혼합: 온디맨드 3대 고정", "안전, 비쌈"),
     ("proposed+rebalance p=0.95", "제안 기법 p=0.95", "싸고 조금 위험"),
@@ -79,19 +80,27 @@ def main():
             mn = monthly(p, spot, od, normal=True)
             out.append(f"| {label} | ${m:,.0f} (약 {m * KRW_PER_USD / 10000:,.0f}만 원) | {m / base:.2f} | "
                        f"${mn:,.0f} | {stats[p]['worst']:.2f}% | {note} |")
+        p95 = monthly("proposed+rebalance p=0.95", spot, od)
         p99 = monthly("proposed+rebalance p=0.99", spot, od)
+        aws = monthly("aws-rebalance", spot, od)
+        fix3 = monthly("aws-rebalance+3", spot, od)
         b3 = monthly("aws-rebalance+odbase3", spot, od)
-        b2 = monthly("aws-rebalance+odbase2", spot, od)
+        w = lambda k: stats[k]["worst"]
         out += ["",
-                f"- 제안 p=0.99 는 비슷하게 안전한 \"온디맨드 3대 고정\"보다 월 ${b3 - p99:,.0f} "
-                f"(약 {(b3 - p99) * KRW_PER_USD / 10000:,.0f}만 원, {(1 - p99 / b3) * 100:.0f}%) 싸다.",
-                f"- \"온디맨드 2대 고정\"보다도 월 ${b2 - p99:,.0f} 싸면서 최악 위반율은 "
-                f"{stats['aws-rebalance+odbase2']['worst']:.2f}% → {stats['proposed+rebalance p=0.99']['worst']:.2f}% 로 낮다.",
+                f"- **AWS 기본 대비**: 제안 p=0.95 는 평상시 비용이 같고(월 ${monthly('aws-rebalance', spot, od, True):,.0f} vs "
+                f"${monthly('proposed+rebalance p=0.95', spot, od, True):,.0f}), 최악 위반율은 {w('aws-rebalance'):.2f}% → "
+                f"{w('proposed+rebalance p=0.95'):.2f}% 로 약 {w('aws-rebalance') / w('proposed+rebalance p=0.95'):.0f}분의 1. "
+                f"대신 8개 환경 평균으로 월 ${p95 - aws:,.0f} ({(p95 / aws - 1) * 100:.0f}%) 더 든다 (위기 때 온디맨드로 옮기는 비용).",
+                f"- **기존 논문식 고정 여유 대비**: 스팟 여유 3대와 제안 p=0.99 는 월 비용이 비슷하지만(${fix3:,.0f} vs ${p99:,.0f}), "
+                f"최악 위반율은 {w('aws-rebalance+3'):.2f}% vs {w('proposed+rebalance p=0.99'):.2f}% "
+                f"(약 {w('aws-rebalance+3') / w('proposed+rebalance p=0.99'):.0f}분의 1).",
+                f"- 참고 (가장 강한 기준선): 온디맨드 3대 고정은 최악 위반율이 더 낮고({w('aws-rebalance+odbase3'):.2f}%) "
+                f"월 ${b3 - p99:,.0f} 더 비싸다. 환경을 알고 그 환경 하나에 맞추면 이쪽이 같거나 낫다.",
                 f"- 규모가 커지면 대략 비례한다. 워커 {od_workers:.1f}대가 아니라 100대 규모라면 위 금액에 약 "
                 f"{100 / od_workers:.0f}배 (선형 가정, 확인 안 됨).", ""]
     out += ["## 읽는 법과 한계", "",
             "- 절감액보다 **\"얼마를 더 내고 어떤 위험을 줄이나\"** 로 읽는다. AWS 기본은 가장 싸지만 복구가 느린 환경에서 작업의 약 15% 가 5분을 넘긴다.",
-            "  제안 기법은 그 위험을 1% 아래로 줄이면서, 같은 수준의 고정 설정보다 덜 낸다.",
+            "  기존 논문처럼 스팟 여유를 더 둬도 몰려서 회수되면 여유도 같이 사라져, 스팟 여유를 3대까지 늘려도 최악 위반율이 10.61% 에 머문다. 제안 기법은 평소엔 AWS 기본처럼 싸게 돌다가 위기 때만 온디맨드로 옮긴다.",
             "- 환경을 미리 알고 그 환경 하나에 맞춰 온디맨드 대수를 고르면 AWS 혼합 설정이 같거나 낫다 (`week4-hardening.md` 3절). 이 표는 \"설정 하나로 여러 환경을 버텨야 할 때\"의 비교다.",
             "- 모두 시뮬레이션의 워커 시간이다. 실제 시스템으로는 위기 구간 두 곳만 확인했다.",
             "- 공개 가격은 제3자 사이트의 값이고 조회 시각이 표기되지 않았다. 스팟 가격은 영역과 시각마다 다르다. 측정 계정에 `ec2:DescribeSpotPriceHistory` 권한을 주면 실제 이력으로 다시 계산할 수 있다.",
