@@ -235,12 +235,55 @@ class AwsCapacityRebalance(QueueReactive):
     uses_notice = True
 
 
+class AwsRebalanceWithSpare(FixedSpare):
+    """
+    실무에서 가장 흔한 조합: AWS 재조정(경고 즉시 대체)에 고정 여유 k 대를 더한다.
+    제안 기법이 이겨야 하는 가장 강한 단순 기준선이다.
+    """
+    uses_notice = True
+
+    def __init__(self, k):
+        super().__init__(k)
+        self.name = f"aws-rebalance+{k}"
+
+
+class AwsRebalanceOnDemandSpare(QueueReactive):
+    """
+    AWS 재조정 + 온디맨드 여유 k 대 (스팟 Nbase 대 + 온디맨드 k 대 고정).
+    "동시 회수가 무서우면 온디맨드를 몇 대 깔아 두면 되지 않나?" 에 대한 기준선.
+    """
+    uses_notice = True
+
+    def __init__(self, k):
+        self.k = k
+        self.name = f"aws-rebalance+od{k}"
+
+    def raw_target(self, ctx, cfg):
+        return n_base(ctx.lam, ctx.mu, ctx.queue, cfg.tdrain), self.k
+
+
+class AwsRebalanceOnDemandBase(QueueReactive):
+    """
+    AWS Auto Scaling 그룹의 혼합 인스턴스 정책(OnDemandBaseCapacity = k): 필요한 Nbase 대 중 앞의 k 대는 온디맨드,
+    나머지는 스팟. 여유는 두지 않고 회수 경고 시 즉시 대체.
+    """
+    uses_notice = True
+
+    def __init__(self, k):
+        self.k = k
+        self.name = f"aws-rebalance+odbase{k}"
+
+    def raw_target(self, ctx, cfg):
+        nb = n_base(ctx.lam, ctx.mu, ctx.queue, cfg.tdrain)
+        return max(0, nb - self.k), min(nb, self.k) if nb > 0 else 0
+
+
 class ProposedWithNotice(Proposed):
     """제안 기법 + 회수 경고 시 즉시 대체 (둘은 함께 쓸 수 있다)."""
     uses_notice = True
 
-    def __init__(self, **kw):
-        super().__init__(name="proposed+rebalance", **kw)
+    def __init__(self, name="proposed+rebalance", **kw):
+        super().__init__(name=name, **kw)
 
 
 class Controller:

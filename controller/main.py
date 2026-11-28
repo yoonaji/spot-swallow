@@ -23,7 +23,7 @@ import random
 import time
 
 from capacity.estimators import DecayingMean, DecayingRate, EvictionHistory, QuantileHistory
-from capacity.policies import (AwsCapacityRebalance, Config, Context, Controller, FixedSpare, OnDemandOnly,
+from capacity.policies import (AwsCapacityRebalance, AwsRebalanceOnDemandBase, Config, Context, Controller, FixedSpare, OnDemandOnly,
                                Proposed, ProposedWithNotice, QueueReactive)
 from controller.fleet import DockerFleet, plan_changes
 from controller.injector import Injector
@@ -34,6 +34,8 @@ from sim import traces
 POLICIES = {
     "proposed": Proposed, "proposed+rebalance": ProposedWithNotice, "aws-rebalance": AwsCapacityRebalance,
     "queue-reactive": QueueReactive, "on-demand-only": OnDemandOnly,
+    "aws-rebalance+odbase2": lambda: AwsRebalanceOnDemandBase(2),
+    "aws-rebalance+odbase3": lambda: AwsRebalanceOnDemandBase(3),
     "fixed-1": lambda: FixedSpare(1), "fixed-2": lambda: FixedSpare(2), "fixed-4": lambda: FixedSpare(4),
 }
 DEFAULT_TRACE = "preemption-4-node-aws-08-03-2023-us-west-2c_v100_1"
@@ -60,6 +62,8 @@ def main():
     ap.add_argument("--duration", type=float, default=1800)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--no-injector", action="store_true")
+    ap.add_argument("--injector-delay", type=float, default=0,
+                    help="회수 주입을 이 시간(초) 뒤에 시작한다. 정책마다 목표 대수까지 늘어날 시간을 준다(워밍업)")
     ap.add_argument("--metrics-port", type=int, default=9108, help="Prometheus 지표 포트 (0 이면 끔)")
     ap.add_argument("--log", help="기본값: data/live/<정책>-<시각>.csv")
     a = ap.parse_args()
@@ -103,7 +107,9 @@ def main():
     injector = None
     if not a.no_injector:
         injector = Injector(fleet, a.trace, trace_start, a.speedup, a.notice, a.seed, market)
-        injector.start()
+        if a.injector_delay <= 0:
+            injector.start()
+            print(f"INJECTOR START {time.time():.1f}", flush=True)
 
     log_path = a.log or f"data/live/{a.policy}-{int(time.time())}.csv"
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
@@ -135,6 +141,9 @@ def main():
     try:
         while time.time() - t0 < a.duration:
             now = time.time()
+            if injector and not injector.is_alive() and injector.t0 is None and now - t0 >= a.injector_delay:
+                injector.start()
+                print(f"INJECTOR START {now:.1f}", flush=True)
             m = market.read()
             notices = set(m.get("notices", {})) if uses_notice else set()
             if notices - seen_notices:
@@ -155,7 +164,7 @@ def main():
                 tready.add(wk.ready_at - wk.launched)
 
             tq, tm = tready.quantile(a.p), tready.mean()
-            trace_now = injector.trace_time(now) if injector else trace_start
+            trace_now = injector.trace_time(now) if injector and injector.t0 else trace_start
             f_p, _ = evhist.stats(trace_now, (tq + a.delta) * a.speedup, a.p)
             _, f_mean = evhist.stats(trace_now, (tm + a.delta) * a.speedup, a.p)
             available = m.get("available", 1) > 0

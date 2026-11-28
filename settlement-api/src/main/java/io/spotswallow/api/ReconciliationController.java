@@ -15,9 +15,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class ReconciliationController {
     private final JdbcTemplate jdbc;
+    private final AuditAnchor anchor;
 
-    public ReconciliationController(JdbcTemplate jdbc) {
+    public ReconciliationController(JdbcTemplate jdbc, AuditAnchor anchor) {
         this.jdbc = jdbc;
+        this.anchor = anchor;
+    }
+
+    /** 지금 체인 끝을 DB 밖에 바로 남긴다 (보안 시험용. 평소에는 주기적으로 남긴다). */
+    @org.springframework.web.bind.annotation.PostMapping("/admin/audit-anchor")
+    public Map<String, Object> anchorNow() {
+        AuditAnchor.Anchor a = anchor.anchorNow();
+        Map<String, Object> out = new LinkedHashMap<>(anchor.verify());
+        out.put("added", a == null ? null : Map.of("seq", a.seq(), "hash", a.hash()));
+        return out;
     }
 
     @GetMapping("/reconciliation")
@@ -73,9 +84,73 @@ public class ReconciliationController {
         report.put("duplicateDeliveriesAbsorbed", duplicateDeliveriesAbsorbed);
         report.put("deadLettered", deadLettered);
         report.put("outboxPending", outboxPending);
-        report.put("consistent", statusResultMismatch == 0 && amountMismatch == 0 && doubleCompleted == 0);
+        // 마감 등급별 마감 초과 (완료가 마감보다 늦었거나, 아직 안 끝났는데 마감이 지남)
+        Map<String, Object> deadlines = new LinkedHashMap<>();
+        jdbc.query("""
+                SELECT priority, count(*),
+                       count(*) FILTER (WHERE deadline_at IS NOT NULL
+                                          AND coalesce(completed_at, now()) > deadline_at)
+                  FROM settlement_jobs GROUP BY priority ORDER BY priority
+                """, rs -> {
+            deadlines.put(rs.getString(1), Map.of("jobs", rs.getLong(2), "missed", rs.getLong(3)));
+        });
+        report.put("deadlineByPriority", deadlines);
+        Map<String, Object> audit = auditChain();
+        report.put("auditChain", audit);
+        boolean auditOk = Boolean.TRUE.equals(audit.get("ok"));
+        report.put("consistent", statusResultMismatch == 0 && amountMismatch == 0 && doubleCompleted == 0 && auditOk);
         report.put("allSettled", pendingJobs == 0 && results == acceptedJobs);
         return report;
+    }
+
+    /**
+     * 결과 감사 체인 검사 (V3).
+     * - brokenLinks: 해시를 다시 계산했을 때 다르거나, 앞 줄 해시와 이어지지 않는 줄. 감사 기록 자체가 고쳐졌다는 뜻이다.
+     * - untracked: 지금 결과 값이 그 작업의 마지막 감사 기록과 다르다. 트리거를 끄고 몰래 바꿨다는 뜻이다.
+     * - anchorMismatch: DB 밖에 남겨 둔 끝 해시가 지금 체인과 다르다. 체인 전체를 다시 계산해 덮었다는 뜻이다.
+     * - changes: 확정 뒤에 결과가 바뀌거나 지워진 기록 (누가 바꿨는지 db_user 로 남는다). 정정일 수 있으므로 ok 에는 넣지 않고,
+     *   금액이 틀렸다면 amountMismatch 가 따로 잡는다.
+     */
+    private Map<String, Object> auditChain() {
+        Map<String, Object> a = new LinkedHashMap<>();
+        long entries = count("SELECT count(*) FROM result_audit");
+        long brokenLinks = count("""
+                SELECT count(*) FROM (
+                    SELECT hash, prev_hash,
+                           result_audit_hash(prev_hash, seq, job_id, action, payload, db_user, recorded_at) AS recomputed,
+                           coalesce(lag(hash) OVER (ORDER BY seq), repeat('0', 64)) AS expected_prev
+                      FROM result_audit) c
+                 WHERE c.hash <> c.recomputed OR c.prev_hash <> c.expected_prev
+                """);
+        long untracked = count("""
+                WITH last AS (
+                    SELECT DISTINCT ON (job_id) job_id, payload FROM result_audit ORDER BY job_id, seq DESC)
+                SELECT count(*) FROM settlement_results r
+                  FULL JOIN last l ON l.job_id = r.job_id
+                 WHERE (CASE WHEN r.job_id IS NULL THEN 'DELETED' ELSE result_payload(r) END)
+                       IS DISTINCT FROM coalesce(l.payload, '(none)')
+                """);
+        Map<String, Object> changes = new LinkedHashMap<>();
+        jdbc.query("""
+                SELECT action, db_user, count(*) FROM result_audit WHERE action <> 'INSERT'
+                 GROUP BY action, db_user ORDER BY action, db_user
+                """, rs -> {
+            changes.put(rs.getString(1) + " by " + rs.getString(2), rs.getLong(3));
+        });
+        String head = jdbc.query("SELECT hash FROM result_audit ORDER BY seq DESC LIMIT 1",
+                rs -> rs.next() ? rs.getString(1) : null);
+        a.put("entries", entries);
+        a.put("brokenLinks", brokenLinks);
+        a.put("untracked", untracked);
+        a.put("changesAfterCommit", changes);
+        a.put("headHash", head);
+        // DB 밖에 남긴 끝 해시와 비교: 체인 전체를 다시 계산해 덮은 경우를 잡는다
+        Map<String, Object> anchors = anchor.verify();
+        long anchorMismatch = ((Number) anchors.get("anchorMismatch")).longValue();
+        a.put("externalAnchors", anchors);
+        a.put("anchorMismatch", anchorMismatch);
+        a.put("ok", brokenLinks == 0 && untracked == 0 && anchorMismatch == 0);
+        return a;
     }
 
     private long count(String sql) {

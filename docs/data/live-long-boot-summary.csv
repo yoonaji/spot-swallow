@@ -1,0 +1,4 @@
+policy,boot_median_s,seed,jobs_after_injection,violation_pct,p50_s,p95_s,max_s,spot_worker_min,od_worker_min,cost_usd_per_h_equiv,evictions,max_od,consistent,lost,amount_mismatch,load_tail,log
+aws-rebalance,600,0,2629,49.9,299.5,569.1,584.1,253.5,118.0,0.367,8,9,True,0,0,RESULT: FAIL,data/live-compare/aws-rebalance-boot600-s0-1795569682.csv
+proposed+rebalance,600,0,2613,0.0,30.6,170.3,208.5,131.0,199.0,0.436,6,5,True,0,0,RESULT: FAIL,data/live-compare/proposed+rebalance-boot600-s0-1795572431.csv
+fixed-2,600,0,2613,40.18,80.9,482.3,489.8,325.5,80.0,0.343,9,7,True,0,0,RESULT: FAIL,data/live-compare/fixed-2-boot600-s0-1795575179.csv

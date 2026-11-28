@@ -14,7 +14,8 @@ import time
 from dataclasses import replace
 from multiprocessing import Pool
 
-from capacity.policies import (AwsCapacityRebalance, Config, FixedSpare, OnDemandOnly, Proposed, ProposedWithNotice,
+from capacity.policies import (AwsCapacityRebalance, AwsRebalanceOnDemandBase, AwsRebalanceOnDemandSpare,
+                               AwsRebalanceWithSpare, Config, FixedSpare, OnDemandOnly, Proposed, ProposedWithNotice,
                                QueueReactive, ablation_policies, standard_policies)
 from sim.engine import Scenario, run
 
@@ -73,6 +74,29 @@ def experiments(seeds):
                            for pol in (AwsCapacityRebalance(), FixedSpare(2), Proposed(), ProposedWithNotice(),
                                        OnDemandOnly())
                            for s in S]
+    # 비용-위반율 경계(frontier): 정책마다 조절 손잡이를 끝까지 돌려 곡선을 만든다.
+    # 고정 여유 k, AWS 재조정 + 고정 여유 k, 제안 기법의 p. 같은 비용에서 누가 더 낮은 위반율을 내는지 본다.
+    knobs = ([FixedSpare(k) for k in range(0, 7)] + [AwsRebalanceWithSpare(k) for k in range(0, 5)]
+             + [AwsRebalanceOnDemandSpare(k) for k in range(1, 5)] + [AwsRebalanceOnDemandBase(k) for k in range(1, 5)]
+             + [OnDemandOnly()])
+    out["frontier"] = [(replace(SCENARIOS["concentrated"], name=f"tready-x{m:g}", tready_mult=m), pol, base, s,
+                        {"tready_mult": m, "knob": getattr(pol, "k", "")})
+                       for m in (2, 3, 4, 6) for pol in knobs for s in S]
+    out["frontier"] += [(replace(SCENARIOS["concentrated"], name=f"tready-x{m:g}", tready_mult=m),
+                         cls(name=f"{nm} p={p}"), replace(base, p=p), s, {"tready_mult": m, "knob": p})
+                        for m in (2, 3, 4, 6) for p in (0.8, 0.9, 0.95, 0.99)
+                        for cls, nm in ((Proposed, "proposed"), (ProposedWithNotice, "proposed+rebalance"))
+                        for s in S]
+    # 견고성: 정해 둔 설정 하나로 평상시부터 복구 15분까지 모든 환경을 돌린다.
+    # 고정 온디맨드 k 대는 환경에 맞게 k 를 골라야 하고, 제안 기법은 p 하나로 스스로 맞춘다는 주장을 확인한다.
+    envs = dict(SCENARIOS)
+    envs["delay-x3"] = replace(SCENARIOS["concentrated"], name="delay-x3", tready_mult=3)
+    envs["delay-x6"] = replace(SCENARIOS["concentrated"], name="delay-x6", tready_mult=6)
+    robust = ([AwsCapacityRebalance(), OnDemandOnly()] + [AwsRebalanceWithSpare(k) for k in (1, 2, 3)]
+              + [AwsRebalanceOnDemandBase(k) for k in (1, 2, 3)] + [AwsRebalanceOnDemandSpare(k) for k in (1, 2)])
+    out["robust"] = [(sc, pol, base, s, {}) for sc in envs.values() for pol in robust for s in S]
+    out["robust"] += [(sc, ProposedWithNotice(name=f"proposed+rebalance p={p}"), replace(base, p=p), s, {})
+                      for sc in envs.values() for p in (0.95, 0.99) for s in S]
     return out
 
 

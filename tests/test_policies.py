@@ -117,3 +117,23 @@ def test_fleet_plan_changes_matches_simulator_rules():
     # 회수 경고를 받은 워커는 없는 셈 치고 대체를 요청한다
     assert plan_changes(ws, 3, 1, doomed={"a"}) == (1, 0, [])
     assert plan_changes(ws, 3, 3) == (0, 2, [])
+
+
+def test_fleet_make_before_break_keeps_ready_workers_until_replacements_ready():
+    from controller.fleet import Worker, plan_changes
+    spots = [Worker(c, "spot", i, state="ready") for i, c in enumerate("abcd")]
+    # 스팟 4대 → (스팟 1, 온디맨드 3): 온디맨드 3대를 띄우되, 준비된 스팟은 아직 내리지 않는다
+    assert plan_changes(spots, 1, 3) == (0, 3, [])
+    # 예전 동작: 스팟 3대를 바로 내린다
+    assert plan_changes(spots, 1, 3, make_before_break=False) == (0, 3, ["d", "c", "b"])
+    # 온디맨드가 부팅 중이면 여전히 내리지 않는다
+    booting = [Worker(f"o{i}", "od", 10 + i) for i in range(3)]
+    assert plan_changes(spots + booting, 1, 3) == (0, 0, [])
+    # 온디맨드 2대가 준비되면 스팟 2대만 내린다
+    for w in booting[:2]:
+        w.state = "ready"
+    assert plan_changes(spots + booting, 1, 3) == (0, 0, ["d", "c"])
+    # 단순 축소(4 → 2)는 바로 내린다
+    assert plan_changes(spots, 2, 0) == (0, 0, ["d", "c"])
+    # 회수 경고를 받은 워커는 준비된 수에 넣지 않는다
+    assert plan_changes(spots, 1, 3, doomed={"a"}) == (0, 3, [])

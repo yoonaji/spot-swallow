@@ -33,7 +33,7 @@
       "uid": "prometheus"
      },
      "refId": "A",
-     "expr": "sum(swallow_recon_amount_mismatch + swallow_recon_status_result_mismatch + swallow_recon_double_completed)",
+     "expr": "sum(swallow_recon_amount_mismatch + swallow_recon_status_result_mismatch + swallow_recon_double_completed + swallow_recon_audit_violations)",
      "legendFormat": "불일치"
     }
    ],

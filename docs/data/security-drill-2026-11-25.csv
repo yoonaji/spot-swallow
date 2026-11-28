@@ -1,0 +1,24 @@
+group,check,result,detail
+0,시작 상태,PASS,results=40 auditEntries=40 consistent=True
+0,체인 끝 해시를 DB 밖에 남김,PASS,anchors=1 lastAnchoredSeq=40
+A,결과 UPDATE,PASS,ERROR:  permission denied for table settlement_results
+A,결과 DELETE,PASS,ERROR:  permission denied for table settlement_results
+A,이력 UPDATE,PASS,ERROR:  permission denied for table job_events
+A,이력 DELETE,PASS,ERROR:  permission denied for table job_events
+A,입력 거래 UPDATE,PASS,ERROR:  permission denied for table transactions
+A,작업 내용 UPDATE (완료 표시 외 칸),PASS,ERROR:  permission denied for table settlement_jobs
+A,감사 기록 읽기,PASS,ERROR:  permission denied for table result_audit
+A,감사 기록 직접 추가,PASS,ERROR:  permission denied for table result_audit
+A,감사 함수 직접 호출 (가짜 기록),PASS,ERROR:  permission denied for function result_audit_record
+A,감사 트리거 끄기,PASS,ERROR:  must be owner of table settlement_results
+A,권한 스스로 올리기,PASS,GRANT / UPDATE 권한=f
+B,누가 바꿨는지 남음,PASS,마지막 감사 기록: swallow UPDATE
+B,대사가 금액 불일치로 잡음,PASS,amountMismatch=1 consistent=False audit.ok=True
+B,"되돌린 뒤 정상, 변경 이력은 남음",PASS,consistent=True changes={'UPDATE by swallow': 2}
+C,금액 대사로는 안 보임,PASS,amountMismatch=0
+C,감사 체인이 잡음,PASS,untracked=1 consistent=False
+D,소유자도 감사 기록 DELETE 거부,PASS,CONTEXT:  PL/pgSQL function result_audit_append_only() line 3 at RAISE
+D,소유자도 감사 기록 TRUNCATE 거부,PASS,CONTEXT:  PL/pgSQL function result_audit_append_only() line 3 at RAISE
+D,흔적을 지우려고 감사 기록을 고치면 해시 체인이 끊김,PASS,brokenLinks=1 untracked=0 consistent=False
+E,DB 안의 검사는 모두 속음,PASS,brokenLinks=0 untracked=0 amountMismatch=0
+E,DB 밖 앵커와 달라 드러남,PASS,anchorMismatch=1 consistent=False

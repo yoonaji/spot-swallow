@@ -108,7 +108,7 @@ public class SettlementWorker {
         Job job = loadJob(jobId);
 
         // 1) 계산: 트랜잭션 밖. 여기서 회수되면 Ack 가 없으므로 메시지는 재전달된다.
-        SettlementCalculator.Settlement s = calculator.calculate(job.merchantId(), job.settlementDate());
+        SettlementCalculator.Settlement s = calculator.calculate(job.jobId(), job.merchantId(), job.settlementDate());
         chaos.maybeCrash(ChaosPolicy.Point.BEFORE_COMMIT, jobId);
 
         // 2) 확정: 짧은 트랜잭션. PK 충돌이면 이미 다른 워커가 확정한 작업이다.
@@ -120,6 +120,8 @@ public class SettlementWorker {
                     ON CONFLICT (job_id) DO NOTHING
                     """, job.jobId(), job.merchantId(), job.settlementDate(),
                     s.txCount(), s.gross(), s.fee(), s.net(), workerId);
+            // 중간 저장은 결과가 확정되면 필요 없다 (같은 트랜잭션에서 지운다)
+            jdbc.update("DELETE FROM job_checkpoints WHERE job_id = ?", job.jobId());
             if (inserted == 1) {
                 jdbc.update("UPDATE settlement_jobs SET status = 'COMPLETED', completed_at = now() WHERE job_id = ?", job.jobId());
                 long processingMs = (System.nanoTime() - startedNanos) / 1_000_000;
