@@ -40,6 +40,10 @@ services:
       RABBIT_HOST: rabbitmq
       CHAOS_PUBLISHER_CRASH_PROBABILITY: ${CHAOS_PUBLISHER_CRASH_PROBABILITY:-0}
       QUEUE_MAX_PRIORITY: ${QUEUE_MAX_PRIORITY:-10}
+      # 감사 체인 끝 해시를 DB 와 다른 볼륨에 남긴다 (운영에서는 지울 수 없는 외부 저장소)
+      AUDIT_ANCHOR_FILE: /anchors/audit-anchors.jsonl
+    volumes:
+      - audit-anchors:/anchors
     ports: ["8080:8080"]
     restart: unless-stopped
     depends_on:
@@ -85,3 +89,6 @@ services:
       - ./infra/grafana/dashboards:/etc/grafana/dashboards:ro
     ports: ["3000:3000"]
     depends_on: [prometheus]
+
+volumes:
+  audit-anchors:

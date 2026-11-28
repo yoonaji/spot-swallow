@@ -1,5 +1,6 @@
 group,check,result,detail
 0,시작 상태,PASS,results=40 auditEntries=40 consistent=True
+0,체인 끝 해시를 DB 밖에 남김,PASS,anchors=1 lastAnchoredSeq=40
 A,결과 UPDATE,PASS,ERROR:  permission denied for table settlement_results
 A,결과 DELETE,PASS,ERROR:  permission denied for table settlement_results
 A,이력 UPDATE,PASS,ERROR:  permission denied for table job_events
@@ -19,3 +20,5 @@ C,감사 체인이 잡음,PASS,untracked=1 consistent=False
 D,소유자도 감사 기록 DELETE 거부,PASS,CONTEXT:  PL/pgSQL function result_audit_append_only() line 3 at RAISE
 D,소유자도 감사 기록 TRUNCATE 거부,PASS,CONTEXT:  PL/pgSQL function result_audit_append_only() line 3 at RAISE
 D,흔적을 지우려고 감사 기록을 고치면 해시 체인이 끊김,PASS,brokenLinks=1 untracked=0 consistent=False
+E,DB 안의 검사는 모두 속음,PASS,brokenLinks=0 untracked=0 amountMismatch=0
+E,DB 밖 앵커와 달라 드러남,PASS,anchorMismatch=1 consistent=False

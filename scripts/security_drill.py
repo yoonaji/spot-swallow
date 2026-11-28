@@ -13,7 +13,9 @@
   B. 관리자 계정으로 결과를 바꾸면(GameDay 1회차와 같은 변조) 감사 체인에 "누가" 남고, 대사가 금액 불일치로 잡는다.
   C. 관리자가 감사 트리거를 끄고 금액이 아닌 값(worker_id)을 몰래 바꾸면, 금액 대사로는 못 잡지만 감사 체인이 잡는다.
   D. 감사 기록은 소유자도 지울 수 없다. 트리거를 끄고 감사 기록 자체를 고치면 해시 체인이 끊겨 드러난다.
-D 는 감사 기록을 되돌릴 수 없게 망가뜨리므로 맨 마지막에 한다. 끝나면 scripts/reset.sh 로 초기화한다.
+  E. 관리자가 흔적을 완전히 지우려고 감사 기록을 고친 뒤 체인 전체를 다시 계산하면, DB 안의 검사는 모두 통과하지만
+     DB 밖에 남긴 끝 해시(앵커)와 달라 드러난다.
+D·E 는 감사 기록을 되돌릴 수 없게 바꾸므로 맨 마지막에 한다. 끝나면 scripts/reset.sh 로 초기화한다.
 """
 import argparse
 import csv
@@ -35,6 +37,12 @@ rows = []
 def run(cmd, sql):
     r = subprocess.run(cmd + [sql], capture_output=True, text=True)
     return r.returncode, (r.stdout.strip() or r.stderr.strip())
+
+
+def post(base, path):
+    req = urllib.request.Request(base + path, data=b"", method="POST")
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read())
 
 
 def recon(base):
@@ -66,6 +74,9 @@ def main():
     check("0", "시작 상태", r0["consistent"] and r0["auditChain"]["ok"]
           and r0["auditChain"]["entries"] == r0["results"],
           f"results={r0['results']} auditEntries={r0['auditChain']['entries']} consistent={r0['consistent']}")
+    a0 = post(args.api, "/admin/audit-anchor")
+    check("0", "체인 끝 해시를 DB 밖에 남김", a0["anchors"] >= 1 and a0["anchorMismatch"] == 0,
+          f"anchors={a0['anchors']} lastAnchoredSeq={a0.get('lastAnchoredSeq')}")
 
     print("A. 워커 계정(스팟이 털렸다고 가정)", flush=True)
     refused("결과 UPDATE", f"UPDATE settlement_results SET net_amount = net_amount + 1 WHERE job_id = '{job}'")
@@ -124,6 +135,25 @@ def main():
           and r["auditChain"]["untracked"] == 0 and not r["consistent"],
           f"brokenLinks={r['auditChain']['brokenLinks']} untracked={r['auditChain']['untracked']} "
           f"consistent={r['consistent']}")
+
+    print("E. 흔적을 완전히 지우려고 감사 기록을 고치고 체인 전체를 다시 계산", flush=True)
+    # C 에서 몰래 바꾼 worker_id 에 맞춰 그 작업의 감사 기록을 모두 고치고, 처음부터 해시를 다시 이어 붙인다
+    code, out = run(ADMIN, "ALTER TABLE result_audit DISABLE TRIGGER trg_result_audit_append_only; "
+                    "UPDATE result_audit SET payload = regexp_replace(payload, '[|][^|]*$', '|someone-else') "
+                    f"WHERE job_id = '{job}' AND action <> 'DELETE'; "
+                    "DO $$ DECLARE r record; prev CHAR(64) := repeat('0', 64); h CHAR(64); BEGIN "
+                    "FOR r IN SELECT * FROM result_audit ORDER BY seq LOOP "
+                    "h := result_audit_hash(prev, r.seq, r.job_id, r.action, r.payload, r.db_user, r.recorded_at); "
+                    "UPDATE result_audit SET prev_hash = prev, hash = h WHERE seq = r.seq; prev := h; "
+                    "END LOOP; END $$; "
+                    "ALTER TABLE result_audit ENABLE TRIGGER trg_result_audit_append_only;")
+    r = recon(args.api)
+    a = r["auditChain"]
+    check("E", "DB 안의 검사는 모두 속음", code == 0 and a["brokenLinks"] == 0 and a["untracked"] == 0
+          and r["amountMismatch"] == 0, f"brokenLinks={a['brokenLinks']} untracked={a['untracked']} "
+          f"amountMismatch={r['amountMismatch']}")
+    check("E", "DB 밖 앵커와 달라 드러남", a["anchorMismatch"] >= 1 and not r["consistent"],
+          f"anchorMismatch={a['anchorMismatch']} consistent={r['consistent']}")
 
     passed = all(x["result"] == "PASS" for x in rows)
     if args.out:

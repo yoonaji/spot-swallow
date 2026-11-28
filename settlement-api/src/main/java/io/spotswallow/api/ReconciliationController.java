@@ -15,9 +15,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class ReconciliationController {
     private final JdbcTemplate jdbc;
+    private final AuditAnchor anchor;
 
-    public ReconciliationController(JdbcTemplate jdbc) {
+    public ReconciliationController(JdbcTemplate jdbc, AuditAnchor anchor) {
         this.jdbc = jdbc;
+        this.anchor = anchor;
+    }
+
+    /** 지금 체인 끝을 DB 밖에 바로 남긴다 (보안 시험용. 평소에는 주기적으로 남긴다). */
+    @org.springframework.web.bind.annotation.PostMapping("/admin/audit-anchor")
+    public Map<String, Object> anchorNow() {
+        AuditAnchor.Anchor a = anchor.anchorNow();
+        Map<String, Object> out = new LinkedHashMap<>(anchor.verify());
+        out.put("added", a == null ? null : Map.of("seq", a.seq(), "hash", a.hash()));
+        return out;
     }
 
     @GetMapping("/reconciliation")
@@ -96,6 +107,7 @@ public class ReconciliationController {
      * 결과 감사 체인 검사 (V3).
      * - brokenLinks: 해시를 다시 계산했을 때 다르거나, 앞 줄 해시와 이어지지 않는 줄. 감사 기록 자체가 고쳐졌다는 뜻이다.
      * - untracked: 지금 결과 값이 그 작업의 마지막 감사 기록과 다르다. 트리거를 끄고 몰래 바꿨다는 뜻이다.
+     * - anchorMismatch: DB 밖에 남겨 둔 끝 해시가 지금 체인과 다르다. 체인 전체를 다시 계산해 덮었다는 뜻이다.
      * - changes: 확정 뒤에 결과가 바뀌거나 지워진 기록 (누가 바꿨는지 db_user 로 남는다). 정정일 수 있으므로 ok 에는 넣지 않고,
      *   금액이 틀렸다면 amountMismatch 가 따로 잡는다.
      */
@@ -132,7 +144,12 @@ public class ReconciliationController {
         a.put("untracked", untracked);
         a.put("changesAfterCommit", changes);
         a.put("headHash", head);
-        a.put("ok", brokenLinks == 0 && untracked == 0);
+        // DB 밖에 남긴 끝 해시와 비교: 체인 전체를 다시 계산해 덮은 경우를 잡는다
+        Map<String, Object> anchors = anchor.verify();
+        long anchorMismatch = ((Number) anchors.get("anchorMismatch")).longValue();
+        a.put("externalAnchors", anchors);
+        a.put("anchorMismatch", anchorMismatch);
+        a.put("ok", brokenLinks == 0 && untracked == 0 && anchorMismatch == 0);
         return a;
     }
 

@@ -64,7 +64,8 @@ public class OperationalMetrics {
         deadLettered.set(((Number) r.get("deadLettered")).longValue());
         stalePendingJobs.set(((Number) r.get("stalePendingJobs")).longValue());
         Map<?, ?> audit = (Map<?, ?>) r.get("auditChain");
-        auditViolations.set(((Number) audit.get("brokenLinks")).longValue() + ((Number) audit.get("untracked")).longValue());
+        auditViolations.set(((Number) audit.get("brokenLinks")).longValue() + ((Number) audit.get("untracked")).longValue()
+                + ((Number) audit.get("anchorMismatch")).longValue());
     }
 
     private long value(String sql) {
