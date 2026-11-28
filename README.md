@@ -38,7 +38,7 @@
 |---|---|---|
 | 워커가 아무 때나 죽어도 돈이 맞나 | 경고 없는 강제 종료 1,449회 + 커밋 직후 자체 종료 148회, 작업 7,000건 유실·중복·금액 불일치 0 | [week3-kill-1000](docs/week3-kill-1000.md) |
 | 어디서 죽어도 맞나 | 장애 지점 8종(발행기, 워커 계산 중·커밋 후, 브로커·DB 재시작, 독성 메시지, 동시 대량 회수) × 3회, 작업 9,600건 PASS | [week3-fault-matrix](docs/week3-fault-matrix.md) |
-| 복구가 느릴 때 여유 용량 제어가 필요한가 | 위 결론. 근거 | [week2-simulation](docs/week2-simulation.md) 결과 3-1, [week4-hardening](docs/week4-hardening.md) 2절 |
+| 복구가 느릴 때 여유 용량 제어가 필요한가 | 맨 위 "결론" 표 (복구 4분 이하 AWS 기본, 7.5분 이상 제안) | [week2-simulation](docs/week2-simulation.md) 결과 3-1, [week4-hardening](docs/week4-hardening.md) 2절 |
 | AWS 기본·기존 논문보다 나은가 | 설정 하나로 8개 환경(평상시~복구 15분)을 돌렸을 때, AWS 재조정 대비 평상시 비용은 같고(0.37) 최악 위반율은 14.91% → 3.05% (p=0.95, 대신 평균 비용 +21%). 기존 논문식 고정 여유(AWS 재조정 + 스팟 여유 3대) 대비 비슷한 비용(0.66 vs 0.65)에 최악 위반율 10.61% → 0.67% (p=0.99). 평균 회수율 기반(Snape식)은 복구 지연 ×4 에서 8.69% vs 1.75% (시뮬레이션) | [week4-hardening](docs/week4-hardening.md) 3절, [week2-simulation](docs/week2-simulation.md) |
 | 한계: 가장 강한 기준선 | 환경을 미리 알고 그 환경 하나에 맞춘 AWS 혼합 설정(온디맨드 k대 고정)은 제안 기법과 같거나 낫다 | [week4-hardening](docs/week4-hardening.md) 3절 |
 | 한 달에 얼마인가 | 하루 15만 건 규모, 공개 가격: 온디맨드만 월 $289, AWS 재조정 $109, 스팟 여유 3대 $170, 제안 p=0.95 $136 · p=0.99 $181 (시뮬레이션) | [cost-report](docs/cost-report.md) |
